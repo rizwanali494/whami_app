@@ -11,6 +11,19 @@ class WhamiApp extends StatelessWidget {
       title: 'WHAMI',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
+      builder: (context, child) {
+        return Container(
+          color: const Color(0xFF0D1117),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 390),
+              child: ClipRect(
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        );
+      },
       home: const SplashScreen(),
     );
   }
