@@ -1,0 +1,500 @@
+Build a complete Flutter mobile app prototype called WHAMI.
+
+App meaning:
+WHAMI = “Where Am I?”
+Tagline: “Verified by the real world.”
+
+Core concept:
+This is not a normal navigation app. It is a Verified Navigation / Position Trust Engine. The app compares multiple independent position opinions and tells the user whether GPS is believable. GPS is only one witness. WHAMI should visually compare GPS with landmark/seamap, magnetic field, IMU movement, and sextant/sky validation.
+
+Important:
+This is a working UI prototype with proper mock data only. Do not use real GPS, real ARCore, real maps, or real sensors yet. Simulate all data through a clean mock data layer. The app should run without API keys, backend, or internet dependency.
+
+Tech stack:
+
+* Flutter
+* Clean folder structure
+* Responsive mobile UI
+* Use mock repositories/services
+* No backend
+* No Firebase
+* No paid map API
+* Use CustomPaint or a local mock map canvas for the map screen
+* Keep code easy to replace with real APIs later
+
+Design style:
+
+* Premium, serious, navigation/security style
+* Dark header with WHAMI logo text
+* White/light background cards
+* Navy blue, amber/yellow, black, red, green, purple marker colors
+* Rounded cards
+* Clear trust score badge
+* Modern app UI
+* Must look good on Android phones
+
+Main colors:
+
+* WHAMI trusted position: Amber / Yellow
+* GPS: Blue
+* Landmark / seamap: Black
+* Magnetic: Red
+* Sextant / sky: Green
+* IMU movement: Purple
+* Background: Off-white / light map style
+* Header: Black or dark navy
+
+Create these screens:
+
+1. Splash Screen
+
+* WHAMI logo text
+* Tagline: “Verified by the real world.”
+* Loading animation for 2 seconds, then go to Home / Map screen
+
+2. Main Map Screen — most important screen
+   Title: “One-view position opinions”
+   Show a mock map canvas with:
+
+* land area
+* water/coastline
+* roads/harbor paths
+* landmark labels like Harbor Tower, Marina, Station, Depot
+* colored circular markers:
+
+  * W = WHAMI trusted position, amber
+  * G = GPS, blue
+  * L = Landmark / seamap, black
+  * M = Magnetic, red
+  * S = Sextant / sky, green
+  * I = IMU, purple
+* Each marker should have an uncertainty circle around it
+* Show circles with different sizes:
+
+  * GPS uncertainty: medium
+  * Landmark uncertainty: small
+  * Magnetic uncertainty: medium
+  * Sextant/sky uncertainty: large
+  * IMU uncertainty: small/medium
+  * WHAMI trusted uncertainty: small/medium
+
+At the top:
+
+* WHAMI title
+* Tagline
+* Trust badge like “TRUST 82%”
+
+Below map:
+
+* Alert card:
+  “GPS is close, but WHAMI trusts landmark + magnetic + sky consensus.”
+* Position Opinions list:
+
+  * WHAMI trusted position — Primary output shown to user
+  * Landmark / seamap — Highest-trust physical-world anchor
+  * GPS — Fast witness, can be de-weighted
+  * Magnetic — Stable, but environment-sensitive
+  * Sextant / sky — Stable independent validator, wider error circle
+  * IMU movement — Movement sanity and jump detection
+
+3. Scenario Switcher
+   On Map screen add a horizontal scenario selector:
+
+* Normal
+* GPS Spoof Warning
+* GPS Lost
+* Magnetic Interference
+* Night / Low Visibility
+  When user changes scenario, update mock data:
+  Normal:
+* Trust 82%
+* GPS near WHAMI position
+* All sources mostly agree
+  GPS Spoof Warning:
+* Trust 54%
+* GPS marker far away
+* Alert: “Possible GPS spoofing/jump detected. GPS de-weighted.”
+  GPS Lost:
+* Trust 68%
+* GPS marker faded or disabled
+* Alert: “GPS unavailable. Using landmark, magnetic, IMU, and sky checks.”
+  Magnetic Interference:
+* Trust 61%
+* Magnetic confidence low
+* Alert: “Magnetic field unstable. Possible nearby metal or interference.”
+  Night / Low Visibility:
+* Trust 72%
+* Landmark confidence lower
+* Sky/sextant confidence higher
+* Alert: “Landmark visibility reduced. Sky and IMU checks weighted higher.”
+
+4. Landmark Scan Screen
+   This is a mock camera/landmark screen.
+   Do not use real camera.
+   Show a fake camera preview-style UI with:
+
+* reticle / scan box
+* mountain/harbor/building illustration placeholder
+* status chips:
+
+  * CameraX mock active
+  * Landmark match: 87%
+  * Visual anchor quality: Good
+  * Saved landmark: Harbor Tower
+    Buttons:
+* Scan Landmark
+* Save Landmark
+* Use as Anchor
+  When clicked, update UI with mock scan result.
+
+5. ARCore Scan Screen
+   This is a fake ARCore mode UI.
+   Show a dark camera-like preview with:
+
+* center reticle
+* horizontal plane/grid lines
+* pose quality indicator
+* labels:
+
+  * ARCore Mode: Mock
+  * Pose Quality: Medium
+  * Feature Points: 128
+  * Visual Match: 74%
+    Buttons:
+* Start AR Scan
+* Reset Scan
+* Send to Fusion Engine
+
+6. Sensors Screen
+   Show mock sensor dashboard:
+   Cards for:
+
+* GPS / GNSS
+* Magnetometer
+* IMU
+* Gyroscope
+* Barometer
+* Sky / Celestial
+* TrustFusionEngine
+
+Each card should show:
+
+* status
+* confidence percentage
+* latest mock value
+* health message
+
+Example:
+GPS / GNSS:
+Status: Active
+Confidence: 78%
+Mock coordinates: 37.8087, -122.4098
+Message: Signal stable, no jump detected
+
+Magnetometer:
+Status: Active
+Confidence: 69%
+Heading: 214°
+Field strength: 48.2 µT
+Message: Field stable
+
+IMU:
+Status: Active
+Confidence: 81%
+Movement: Walking / Slow boat movement
+Message: Movement path is consistent
+
+Sky / Sextant:
+Status: Available
+Confidence: 64%
+Error radius: 900m
+Message: Stable independent validator, not meter-accurate
+
+TrustFusionEngine:
+Trust Score: 82%
+Output: WHAMI trusted position
+Message: Landmark + magnetic + sky consensus supports position
+
+7. Region Pack Screen
+   Show offline region packs. This is WHAMI’s data moat.
+   Create mock packs:
+
+* SF Bay Harbor Pack
+* Lake Tahoe Pack
+* Mountain View Hiking Pack
+* Rotterdam Harbor Pack
+* Coastal Emergency Demo Pack
+
+Each pack card should show:
+
+* pack name
+* type: Marine / Lake / Hiking / Urban
+* size
+* status: Downloaded / Available / Update Needed
+* data included:
+
+  * Land maps
+  * Marine/lake data
+  * Landmarks
+  * Magnetic baseline
+  * Celestial tables
+  * Route trust history
+* buttons:
+
+  * Download
+  * Verify
+  * Details
+
+Region pack detail screen:
+Show folder structure:
+
+* /maps
+* /marine
+* /landmarks
+* /magnetic
+* /celestial
+* /imu
+* /trust
+
+8. Trust Details Screen
+   Show how WHAMI calculated trust score.
+   Use this mock formula:
+   Trust = 0.45 × LandmarkMatch + 0.20 × GPSConfidence + 0.15 × MagneticFit + 0.10 × IMUPath + 0.10 × SkyStability
+
+Display:
+
+* Landmark Match: 88%
+* GPS Confidence: 78%
+* Magnetic Fit: 69%
+* IMU Path: 81%
+* Sky Stability: 64%
+* Final Trust Score: 82%
+
+Also show explanation:
+“WHAMI gives higher weight to physical-world anchors like landmark/seamap. GPS is useful but never treated as absolute authority.”
+
+9. Alerts / History Screen
+   Show recent trust events:
+
+* GPS jump detected
+* Landmark anchor confirmed
+* Magnetic field unstable
+* Region pack verified
+* Sky check completed
+* IMU path consistent
+
+Each alert should have:
+
+* icon
+* severity: Info / Warning / Critical
+* time
+* explanation
+
+10. Settings / Disclaimer Screen
+    Show:
+
+* App mode: Prototype / Mock Data
+* Units: Metric / Imperial
+* Offline pack storage
+* Privacy note
+* Disclaimer:
+
+“WHAMI provides a verified position estimate based on multiple device sensors and offline data sources. It is intended as a navigation confidence and redundancy layer. It should not be used as the sole source of navigation in safety-critical marine, aviation, rescue, or vehicle operations unless certified for that specific use case.”
+
+Navigation:
+Use bottom navigation with 5 tabs:
+
+* Map
+* Scan
+* Sensors
+* Packs
+* Alerts
+
+The Scan tab can include two sub-tabs:
+
+* Landmark Scan
+* ARCore Scan
+
+Mock data requirements:
+Create proper mock models and repositories.
+
+Models:
+
+* PositionOpinion
+
+  * id
+  * name
+  * shortCode
+  * sourceType
+  * latitude
+  * longitude
+  * confidence
+  * uncertaintyRadius
+  * colorName
+  * status
+  * description
+
+* SensorStatus
+
+  * id
+  * name
+  * status
+  * confidence
+  * latestValue
+  * healthMessage
+  * iconName
+
+* RegionPack
+
+  * id
+  * name
+  * type
+  * size
+  * status
+  * location
+  * lastUpdated
+  * includedData
+  * trustScore
+
+* TrustScenario
+
+  * id
+  * name
+  * trustScore
+  * alertMessage
+  * opinions
+  * sensors
+
+* TrustEvent
+
+  * id
+  * title
+  * severity
+  * time
+  * description
+
+Use sample mock coordinates around a harbor/coastal area:
+Base WHAMI trusted position:
+latitude: 37.8087
+longitude: -122.4098
+
+Normal source opinions:
+WHAMI:
+lat 37.8087, lng -122.4098, confidence 82, uncertainty 45m
+GPS:
+lat 37.8089, lng -122.4095, confidence 78, uncertainty 85m
+Landmark:
+lat 37.8086, lng -122.4100, confidence 88, uncertainty 35m
+Magnetic:
+lat 37.8084, lng -122.4099, confidence 69, uncertainty 120m
+Sextant:
+lat 37.8078, lng -122.4104, confidence 64, uncertainty 900m
+IMU:
+lat 37.8085, lng -122.4097, confidence 81, uncertainty 70m
+
+GPS Spoof scenario:
+GPS:
+lat 37.8155, lng -122.3981, confidence 35, uncertainty 300m
+WHAMI:
+lat 37.8087, lng -122.4098, confidence 54, uncertainty 160m
+Alert:
+“Possible GPS spoofing/jump detected. GPS is far from physical-world consensus.”
+
+GPS Lost scenario:
+GPS:
+status: Unavailable
+confidence 0
+WHAMI trust score 68
+Alert:
+“GPS unavailable. WHAMI is using landmark, magnetic, IMU, and sky checks.”
+
+Magnetic Interference scenario:
+Magnetic:
+confidence 18
+status: Unstable
+Alert:
+“Magnetic field unstable. Possible nearby metal, vehicle, or boat electronics.”
+
+Night / Low Visibility scenario:
+Landmark:
+confidence 42
+Sky:
+confidence 78
+Alert:
+“Landmark visibility reduced. Sky and IMU checks weighted higher.”
+
+Code structure:
+lib/
+main.dart
+app.dart
+core/
+constants/
+theme/
+utils/
+data/
+mock/
+mock_position_data.dart
+mock_sensor_data.dart
+mock_region_pack_data.dart
+mock_alert_data.dart
+models/
+position_opinion.dart
+sensor_status.dart
+region_pack.dart
+trust_scenario.dart
+trust_event.dart
+repositories/
+whami_mock_repository.dart
+features/
+map/
+map_screen.dart
+widgets/
+mock_map_canvas.dart
+trust_badge.dart
+position_opinion_card.dart
+scenario_selector.dart
+scan/
+scan_screen.dart
+landmark_scan_screen.dart
+arcore_scan_screen.dart
+sensors/
+sensors_screen.dart
+widgets/
+sensor_card.dart
+region_packs/
+region_pack_screen.dart
+region_pack_detail_screen.dart
+widgets/
+region_pack_card.dart
+alerts/
+alerts_screen.dart
+widgets/
+alert_event_card.dart
+settings/
+settings_screen.dart
+navigation/
+main_navigation.dart
+
+UI behavior:
+
+* Scenario selector updates trust score, map markers, alert message, and sensor data
+* Region pack download button changes status from Available to Downloaded
+* Verify button shows Verified state
+* Landmark Scan button changes mock scan result
+* AR scan button changes pose quality and feature point count
+* Alerts list should look real and useful
+
+Quality requirements:
+
+* App must compile
+* No placeholder broken widgets
+* No API keys required
+* No real sensor permissions required
+* Mock data should be centralized and easy to change
+* UI must be responsive
+* Use reusable widgets
+* Use clean readable code
+* Add comments where future real sensor integration will happen
+
+Final output:
+Create the full Flutter app code with all screens, models, mock repositories, navigation, and polished UI. The prototype should clearly communicate WHAMI’s product idea: “GPS is only one witness. WHAMI verifies position using the real world.”
