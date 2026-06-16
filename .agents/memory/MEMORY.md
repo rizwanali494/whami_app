@@ -1,0 +1,1 @@
+- [Flutter on Replit](flutter-replit.md) — Flutter 3.32.0 available via Nix `installSystemDependencies(["flutter"])`; use CardThemeData not CardTheme in ThemeData.

@@ -1,45 +1,56 @@
-# [Project name]
+# WHAMI — Where Am I?
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Flutter mobile app prototype for verified navigation and position trust. WHAMI compares GPS, landmark/seamap, magnetic field, IMU movement, and sextant/sky validation to tell users whether their GPS is believable.
+
+Tagline: *"Verified by the real world."*
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- **Flutter app**: `cd artifacts/whami && flutter run -d web-server --web-port 3000 --web-hostname 0.0.0.0`
+- Workflow: `WHAMI Flutter App` — runs on port 3000
+- `pnpm --filter @workspace/api-server run dev` — API server (port 5000, not used by WHAMI)
+- Required env: none (all mock data, no API keys needed)
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Flutter 3.32.0 (Dart 3.8.0), web target
+- No backend, no Firebase, no paid APIs
+- All data: centralized mock repositories
+- State: StatefulWidget + shared `WhamiMockRepository`
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/whami/lib/` — Flutter app source
+- `artifacts/whami/lib/data/mock/` — All mock data (easy to swap for real sensors)
+- `artifacts/whami/lib/data/repositories/whami_mock_repository.dart` — Central data access
+- `artifacts/whami/lib/features/` — All screens by feature
+- `artifacts/whami/lib/core/constants/app_colors.dart` — Color system
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- All sensor/GPS data is mocked via `WhamiMockRepository` — replace each method with real sensor calls
+- `TrustScenario` objects bundle opinions + sensor states per scenario — switching scenarios just calls `repo.setScenario(index)`
+- CustomPaint used for map canvas and AR grid — no map API required
+- Trust formula: `0.45×Landmark + 0.20×GPS + 0.15×Magnetic + 0.10×IMU + 0.10×Sky`
+- Flutter web target chosen so the prototype runs in Replit browser preview
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+10 screens: Splash, Map (with scenario switcher + live trust badge), Landmark Scan, ARCore Scan, Sensors Dashboard, Region Packs, Pack Detail, Alerts/History, Trust Details, Settings/Disclaimer.
+
+5-tab bottom navigation: Map | Scan | Sensors | Packs | Alerts. Settings via FAB.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+_Populate as you build._
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Flutter 3.32.0 uses `CardThemeData` not `CardTheme` in `ThemeData`
+- Flutter web runs in debug mode via `flutter run -d web-server` — production build uses `flutter build web`
+- `flutter run` must be restarted (not hot-reloaded) after structural Dart changes in Replit
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- See `artifacts/whami/lib/data/mock/` to update mock values
+- See `artifacts/whami/lib/data/repositories/whami_mock_repository.dart` for TODO integration points
