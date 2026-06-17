@@ -35,10 +35,7 @@ class _MainNavigationState extends State<MainNavigation> {
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
@@ -76,12 +73,12 @@ class _MainNavigationState extends State<MainNavigation> {
         backgroundColor: _currentIndex == 5
             ? AppColors.whami
             : AppColors.headerBg,
+        tooltip: 'Trust Details & Settings',
         child: Icon(
           Icons.settings,
           color: _currentIndex == 5 ? Colors.black : Colors.white,
           size: 20,
         ),
-        tooltip: 'Trust Details & Settings',
       ),
     );
   }
