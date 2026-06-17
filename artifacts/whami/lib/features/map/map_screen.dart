@@ -42,10 +42,10 @@ class _MapScreenState extends State<MapScreen> {
           SliverAppBar(
             backgroundColor: AppColors.headerBg,
             pinned: true,
-            expandedHeight: 100,
+            expandedHeight: 120,
             flexibleSpace: FlexibleSpaceBar(
               background: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 48, 20, 10),
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [

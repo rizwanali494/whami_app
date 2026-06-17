@@ -46,6 +46,7 @@ _Populate as you build._
 
 ## Gotchas
 
+- **Run `flutter pub get` first**: After any fresh checkout or `pubspec.yaml` change, run `cd artifacts/whami && flutter pub get` before starting the workflow. Without it the pub cache is empty and Flutter's own SDK files fail to compile with hundreds of "Matrix4/Vector3 not a type" errors.
 - Flutter 3.32.0 uses `CardThemeData` not `CardTheme` in `ThemeData`
 - Flutter web runs in debug mode via `flutter run -d web-server` — production build uses `flutter build web`
 - `flutter run` must be restarted (not hot-reloaded) after structural Dart changes in Replit

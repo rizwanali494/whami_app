@@ -11,6 +11,18 @@ await installSystemDependencies({ packages: ["flutter"] });
 
 Installs Flutter 3.32.0, Dart 3.8.0. No `installProgrammingLanguage` needed.
 
+## REQUIRED after creating a new Flutter project
+
+Always run `flutter pub get` inside the project directory before starting the workflow. Without it the pub cache is empty and the Flutter SDK itself fails to compile (Matrix4, Vector3, @visibleForTesting, @protected all become undefined — these come from `vector_math` and `meta` which are Flutter SDK internal dependencies fetched via pub).
+
+```bash
+cd artifacts/whami && flutter pub get
+```
+
+**Why:** The Nix-wrapped Flutter SDK does not pre-populate the pub cache. The first `flutter run` will fail with hundreds of "type not found" errors from inside Flutter's own source files unless pub has fetched the deps first.
+
+**How to apply:** After `flutter create` or after any `pubspec.yaml` change, always run `flutter pub get` before restarting the workflow.
+
 ## Run (web target)
 
 ```bash
