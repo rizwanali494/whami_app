@@ -1,0 +1,13 @@
+kind = "web"
+previewPath = "/"
+title = "WHAMI Flutter App"
+version = "1.0.0"
+id = "default-whami-flutter-app"
+
+[[services]]
+localPort = 3000
+name = "WHAMI Flutter App"
+paths = ["/"]
+
+[services.development]
+run = "cd artifacts/whami && flutter run -d web-server --web-port 3000 --web-hostname 0.0.0.0"
