@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/repositories/whami_mock_repository.dart';
-import 'widgets/mock_map_canvas.dart';
+import 'widgets/whami_map_view.dart';
 import 'widgets/trust_badge.dart';
 import 'widgets/scenario_selector.dart';
 import 'widgets/position_opinion_card.dart';
@@ -38,7 +38,7 @@ class _MapScreenState extends State<MapScreen> {
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // Header
+          // ── Header ──────────────────────────────────────────────────────
           SliverAppBar(
             backgroundColor: AppColors.headerBg,
             pinned: true,
@@ -85,7 +85,7 @@ class _MapScreenState extends State<MapScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Scenario selector
+                // ── Scenario selector ──────────────────────────────────────
                 const SizedBox(height: 14),
                 ScenarioSelector(
                   scenarios: repo.scenarios,
@@ -93,11 +93,10 @@ class _MapScreenState extends State<MapScreen> {
                   onChanged: _onScenarioChanged,
                 ),
 
-                // Map title
-                Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: const Text(
+                // ── Map title ──────────────────────────────────────────────
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
                     'One-view position opinions',
                     style: TextStyle(
                       fontSize: 16,
@@ -107,37 +106,70 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
 
-                // Map canvas
+                // ── Region pack label ─────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.inventory_2_outlined,
+                          size: 13, color: AppColors.textSecondary),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'SF Bay region pack loaded',
+                        style: TextStyle(
+                            fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A3A2A),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'OFFLINE',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: Color(0xFF4CAF50),
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ── Real MapLibre GL map ───────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SizedBox(
-                    height: 240,
-                    child: MockMapCanvas(opinions: opinions),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      height: 280,
+                      child: WhamiMapView(opinions: opinions),
+                    ),
                   ),
                 ),
 
-                // Map legend
+                // ── Legend ────────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 4,
-                    children: opinions
-                        .map((op) => _LegendItem(opinion: op))
-                        .toList(),
-                  ),
+                  child: MapLegendRow(opinions: opinions),
                 ),
 
-                // Alert card
+                // ── Alert card ────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _AlertCard(message: alertMessage, scenario: scenario.id),
+                  child: _AlertCard(
+                      message: alertMessage, scenario: scenario.id),
                 ),
 
-                // Opinions list title
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
-                  child: const Text(
+                // ── Position opinions list ────────────────────────────────
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 18, 16, 10),
+                  child: Text(
                     'Position Opinions',
                     style: TextStyle(
                       fontSize: 15,
@@ -147,7 +179,6 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
 
-                // Opinions list
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
@@ -170,47 +201,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
-class _LegendItem extends StatelessWidget {
-  final dynamic opinion;
-
-  const _LegendItem({required this.opinion});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = AppColors.forSource(opinion.sourceType as String);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Text(
-              opinion.shortCode as String,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 8,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          opinion.name as String,
-          style: const TextStyle(
-            fontSize: 10,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
-    );
-  }
-}
+// ── Alert card ────────────────────────────────────────────────────────────────
 
 class _AlertCard extends StatelessWidget {
   final String message;
@@ -227,18 +218,18 @@ class _AlertCard extends StatelessWidget {
 
     Color bg = AppColors.alertInfo;
     Color border = AppColors.alertInfoBorder;
-    Color icon = AppColors.alertInfoBorder;
+    Color iconColor = AppColors.alertInfoBorder;
     IconData iconData = Icons.info_outline;
 
     if (isCritical) {
       bg = AppColors.alertCritical;
       border = AppColors.alertCriticalBorder;
-      icon = AppColors.alertCriticalBorder;
+      iconColor = AppColors.alertCriticalBorder;
       iconData = Icons.warning_amber_rounded;
     } else if (isWarning) {
       bg = AppColors.alertWarning;
       border = AppColors.alertWarningBorder;
-      icon = AppColors.alertWarningBorder;
+      iconColor = AppColors.alertWarningBorder;
       iconData = Icons.info_outline;
     }
 
@@ -252,12 +243,12 @@ class _AlertCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(iconData, color: icon, size: 18),
+          Icon(iconData, color: iconColor, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(
+              style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,

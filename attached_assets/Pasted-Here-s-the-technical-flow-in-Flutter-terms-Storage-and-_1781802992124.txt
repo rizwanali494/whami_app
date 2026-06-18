@@ -1,0 +1,16 @@
+Here's the technical flow in Flutter terms:
+Storage and structure: when a region pack downloads, you save it into the app's documents folder using path_provider, with a folder per region containing the map tiles file and a few small data files: landmarks.geojson, magnetic.geojson, seamap.geojson. GeoJSON is just a simple JSON format for points/lines/shapes with coordinates, which is the same format maplibre_gl already knows how to read.
+Map tiles (the background): maplibre_gl takes a style file describing where tiles come from. For offline use, instead of pointing that style at a web URL, you point it at the downloaded tiles using a file:// path, so the renderer pulls tiles straight from local storage instead of the network. No custom rendering code needed — this is built into MapLibre's tile source handling.
+Landmark markers: at runtime, you read landmarks.geojson off disk with plain Dart file reading, then hand that data straight to the map:
+dartfinal data = jsonDecode(await File(landmarksPath).readAsString());
+await controller.addGeoJsonSource('landmarks', data);
+await controller.addSymbolLayer('landmarks', 'landmark-layer',
+    SymbolLayerProperties(iconImage: 'landmark-icon'));
+Magnetic field overlay: same pattern, but rendered as colored circles sized or colored based on the field-strength value stored in each point:
+dartawait controller.addGeoJsonSource('magnetic', magneticData);
+await controller.addCircleLayer('magnetic', 'magnetic-layer',
+    CircleLayerProperties(circleColor: [
+      'interpolate', ['linear'], ['get', 'strength'], 0, '#2D9CDB', 100, '#E24B4A'
+    ]));
+Seamap/chart lines: same idea again, just as a line layer instead of points or circles, reading seamap.geojson and calling addLineLayer.
+So the pattern repeats for every layer: read a small local file → hand it to maplibre_gl as a source → tell it how to draw that source (icon, circle, or line). The trust fusion engine separately decides which markers get amber-highlighted as "trusted," but that's just changing which layer/style gets drawn on top — the data itself never leaves the phone.

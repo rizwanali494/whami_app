@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "region": "sf_bay",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.4786, 37.8199] },
+      "properties": { "name": "Golden Gate Bridge", "type": "bridge", "confidence": 0.95, "saved": true }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.3778, 37.7983] },
+      "properties": { "name": "Bay Bridge West Tower", "type": "bridge", "confidence": 0.95, "saved": true }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.4230, 37.8270] },
+      "properties": { "name": "Alcatraz Island", "type": "island", "confidence": 0.92, "saved": true }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.3937, 37.7955] },
+      "properties": { "name": "SF Ferry Building", "type": "building", "confidence": 0.88, "saved": true }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.2778, 37.7990] },
+      "properties": { "name": "Oakland Inner Harbor", "type": "port", "confidence": 0.85, "saved": false }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.4655, 37.8076] },
+      "properties": { "name": "Fort Point", "type": "structure", "confidence": 0.80, "saved": false }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.3765, 37.8271] },
+      "properties": { "name": "Angel Island", "type": "island", "confidence": 0.90, "saved": true }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.4781, 37.7693] },
+      "properties": { "name": "Ocean Beach Cliff House", "type": "building", "confidence": 0.74, "saved": false }
+    }
+  ]
+}

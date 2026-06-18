@@ -1,0 +1,63 @@
+{
+  "type": "FeatureCollection",
+  "region": "sf_bay",
+  "source": "NOAA ENC — SF Bay chart lines",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4786, 37.8199], [-122.4650, 37.8180], [-122.4500, 37.8150],
+          [-122.4300, 37.8120], [-122.4100, 37.8090], [-122.3900, 37.8050],
+          [-122.3778, 37.7983]
+        ]
+      },
+      "properties": { "name": "Main Shipping Channel", "type": "channel", "depth_m": 15 }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4230, 37.8270], [-122.4150, 37.8200], [-122.4050, 37.8100],
+          [-122.3980, 37.8000], [-122.3937, 37.7955]
+        ]
+      },
+      "properties": { "name": "Central Bay Channel", "type": "channel", "depth_m": 12 }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.3937, 37.7955], [-122.3850, 37.7920], [-122.3700, 37.7880],
+          [-122.3500, 37.7850], [-122.3200, 37.7820], [-122.2778, 37.7990]
+        ]
+      },
+      "properties": { "name": "Oakland Approach Channel", "type": "channel", "depth_m": 14 }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4786, 37.8199], [-122.4720, 37.8150], [-122.4680, 37.8080],
+          [-122.4650, 37.7990], [-122.4620, 37.7900], [-122.4600, 37.7800]
+        ]
+      },
+      "properties": { "name": "Golden Gate to Anchorage F", "type": "route", "depth_m": 20 }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.3765, 37.8271], [-122.3850, 37.8200], [-122.3930, 37.8130],
+          [-122.4000, 37.8060], [-122.4100, 37.8090]
+        ]
+      },
+      "properties": { "name": "Angel Island South Channel", "type": "channel", "depth_m": 8 }
+    }
+  ]
+}

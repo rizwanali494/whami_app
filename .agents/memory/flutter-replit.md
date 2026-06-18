@@ -37,6 +37,16 @@ cd artifacts/whami && flutter run -d web-server --web-port 3000 --web-hostname 0
 
 **How to apply:** Whenever writing ThemeData with card/dialog/etc themes, use the `*ThemeData` variant.
 
+## Map package: use flutter_map, NOT maplibre_gl, for Flutter web
+
+`maplibre_gl 0.19.0+2` fails on Flutter 3.32.0 with `Undefined name 'platformViewRegistry'` — the package uses the old `ui.platformViewRegistry` API removed in Flutter 3.x. The newer `maplibre_gl 0.26.1` requires `meta ^1.17.0` but Flutter SDK pins `meta 1.16.0`. Both versions are blocked on Flutter 3.32.0.
+
+Use `flutter_map: ^7.0.0` + `latlong2: ^0.9.1` instead — pure Dart, no platform view bridges, works on web + native, supports CARTO/OSM tiles, meter-accurate uncertainty circles via `useRadiusInMeter: true`, dashed lines via `StrokePattern.dashed(segments: [8, 4])` (not `isDotted`).
+
+**Why:** maplibre_gl is incompatible with Flutter 3.32.0 on web in any available pub.dev version. flutter_map covers all the same capabilities for this prototype.
+
+**How to apply:** Any new Flutter web map work should use flutter_map. For the production native build, the client can switch to maplibre_gl which works fine on Android/iOS native.
+
 ## Workflow command
 
 ```
