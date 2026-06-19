@@ -8,7 +8,7 @@ class MockAlertData {
       severity: 'critical',
       time: '2 min ago',
       description:
-          'GPS position jumped 850m in 0.3 seconds — physically impossible for current movement. GPS de-weighted in fusion engine.',
+          'GPS position jumped 850m in 0.3 seconds — physically impossible. GPS is only one witness; de-weighted to ensure a blended position is trusted.',
       iconName: 'gps_off',
     ),
     TrustEvent(
@@ -17,7 +17,7 @@ class MockAlertData {
       severity: 'info',
       time: '5 min ago',
       description:
-          'Harbor Tower landmark successfully matched with 91% confidence. Visual anchor saved to region pack.',
+          'Harbor Tower landmark matched. WHAMI cross-checks this physical anchor with GPS to compute a blended, trusted position.',
       iconName: 'location_on',
     ),
     TrustEvent(

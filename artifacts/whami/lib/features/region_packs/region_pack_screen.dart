@@ -16,6 +16,18 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
   void _refresh() => setState(() {});
 
   @override
+  void initState() {
+    super.initState();
+    widget.repository.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    widget.repository.removeListener(_refresh);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final packs = widget.repository.getRegionPacks();
     final downloaded = packs.where((p) => p.status == 'downloaded').length;
@@ -118,10 +130,7 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
                   (pack) => RegionPackCard(
                     key: ValueKey(pack.id),
                     pack: widget.repository.getRegionPackById(pack.id)!,
-                    onStatusChanged: () {
-                      widget.repository.updatePackStatus(pack.id, 'downloaded');
-                      _refresh();
-                    },
+                    repository: widget.repository,
                   ),
                 ),
 

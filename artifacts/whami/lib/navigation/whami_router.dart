@@ -9,6 +9,7 @@ import '../features/alerts/alerts_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../core/constants/app_colors.dart';
+import '../core/widgets/offline_banner.dart';
 
 /// Single shared repository — replace with a proper DI provider for production.
 final whamiRepo = WhamiMockRepository();
@@ -17,46 +18,50 @@ final whamiRouter = GoRouter(
   initialLocation: '/',
   routes: [
     // Splash screen — navigates to /map after delay
-    GoRoute(
-      path: '/',
-      builder: (_, __) => const SplashScreen(),
-    ),
+    GoRoute(path: '/', builder: (_, __) => const SplashScreen()),
 
     // Main shell with bottom navigation
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           _WhamiShell(shell: navigationShell),
       branches: [
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/map',
-            builder: (_, __) => MapScreen(repository: whamiRepo),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/scan',
-            builder: (_, __) => const ScanScreen(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/sensors',
-            builder: (_, __) => SensorsScreen(repository: whamiRepo),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/packs',
-            builder: (_, __) => RegionPackScreen(repository: whamiRepo),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/alerts',
-            builder: (_, __) => AlertsScreen(repository: whamiRepo),
-          ),
-        ]),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/map',
+              builder: (_, __) => MapScreen(repository: whamiRepo),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(path: '/scan', builder: (_, __) => const ScanScreen()),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/sensors',
+              builder: (_, __) => SensorsScreen(repository: whamiRepo),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/packs',
+              builder: (_, __) => RegionPackScreen(repository: whamiRepo),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/alerts',
+              builder: (_, __) => AlertsScreen(repository: whamiRepo),
+            ),
+          ],
+        ),
       ],
     ),
 
@@ -79,37 +84,43 @@ class _WhamiShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: shell,
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: shell.currentIndex,
-        onTap: (index) => shell.goBranch(
-          index,
-          initialLocation: index == shell.currentIndex,
-        ),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map_outlined),
-            activeIcon: Icon(Icons.map),
-            label: 'Map',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.document_scanner_outlined),
-            activeIcon: Icon(Icons.document_scanner),
-            label: 'Scan',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.sensors_outlined),
-            activeIcon: Icon(Icons.sensors),
-            label: 'Sensors',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.inventory_2_outlined),
-            activeIcon: Icon(Icons.inventory_2),
-            label: 'Packs',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.notifications_outlined),
-            activeIcon: Icon(Icons.notifications),
-            label: 'Alerts',
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          OfflineBanner(repository: whamiRepo),
+          BottomNavigationBar(
+            currentIndex: shell.currentIndex,
+            onTap: (index) => shell.goBranch(
+              index,
+              initialLocation: index == shell.currentIndex,
+            ),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.map_outlined),
+                activeIcon: Icon(Icons.map),
+                label: 'Map',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.document_scanner_outlined),
+                activeIcon: Icon(Icons.document_scanner),
+                label: 'Scan',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.sensors_outlined),
+                activeIcon: Icon(Icons.sensors),
+                label: 'Sensors',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.inventory_2_outlined),
+                activeIcon: Icon(Icons.inventory_2),
+                label: 'Packs',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.notifications_outlined),
+                activeIcon: Icon(Icons.notifications),
+                label: 'Alerts',
+              ),
+            ],
           ),
         ],
       ),

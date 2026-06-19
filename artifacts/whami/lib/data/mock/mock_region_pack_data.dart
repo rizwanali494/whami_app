@@ -19,6 +19,13 @@ class MockRegionPackData {
         'Route trust history',
       ],
       trustScore: 94,
+      fileSizes: const {
+        'maps': '98.4 MB (847 tiles)',
+        'marine': '17.0 MB (sea charts)',
+        'landmarks': '14.2 MB (847 points)',
+        'magnetic': '8.1 MB (2,500 grid pts)',
+        'celestial': '4.3 MB (star catalog)',
+      },
     ),
     RegionPack(
       id: 'tahoe',
@@ -36,6 +43,13 @@ class MockRegionPackData {
         'Celestial tables',
       ],
       trustScore: 89,
+      fileSizes: const {
+        'maps': '56.1 MB (412 tiles)',
+        'marine': '12.4 MB (lake contours)',
+        'landmarks': '5.2 MB (312 points)',
+        'magnetic': '9.8 MB (1,800 grid pts)',
+        'celestial': '4.5 MB (star catalog)',
+      },
     ),
     RegionPack(
       id: 'mountain_view',
@@ -54,6 +68,14 @@ class MockRegionPackData {
         'IMU path templates',
       ],
       trustScore: 76,
+      fileSizes: const {
+        'maps': '38.2 MB (284 tiles)',
+        'marine': '4.1 MB (trail contours)',
+        'landmarks': '3.3 MB (198 points)',
+        'magnetic': '5.4 MB (900 grid pts)',
+        'celestial': '4.5 MB (star catalog)',
+        'imu': '8.5 MB (path templates)',
+      },
     ),
     RegionPack(
       id: 'rotterdam',
@@ -73,6 +95,14 @@ class MockRegionPackData {
         'Harbor lane data',
       ],
       trustScore: 97,
+      fileSizes: const {
+        'maps': '124.5 MB (1,204 tiles)',
+        'marine': '36.8 MB (channel depths)',
+        'landmarks': '22.3 MB (1,204 points)',
+        'magnetic': '12.2 MB (3,600 grid pts)',
+        'celestial': '4.5 MB (star catalog)',
+        'trust': '9.7 MB (route histories)',
+      },
     ),
     RegionPack(
       id: 'coastal_demo',
@@ -90,6 +120,13 @@ class MockRegionPackData {
         'Celestial tables',
       ],
       trustScore: 82,
+      fileSizes: const {
+        'maps': '24.1 MB (156 tiles)',
+        'marine': '5.2 MB (depth contours)',
+        'landmarks': '1.8 MB (56 points)',
+        'magnetic': '2.4 MB (300 grid pts)',
+        'celestial': '4.5 MB (star catalog)',
+      },
     ),
   ];
 }

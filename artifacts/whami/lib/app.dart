@@ -18,9 +18,7 @@ class WhamiApp extends StatelessWidget {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 390),
-              child: ClipRect(
-                child: child ?? const SizedBox.shrink(),
-              ),
+              child: ClipRect(child: child ?? const SizedBox.shrink()),
             ),
           ),
         );

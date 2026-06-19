@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/connectivity_status.dart';
 import '../../data/repositories/whami_mock_repository.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -13,6 +14,20 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _useMetric = true;
+
+  void _refresh() => setState(() {});
+
+  @override
+  void initState() {
+    super.initState();
+    widget.repository.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    widget.repository.removeListener(_refresh);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +78,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                   child: Column(
                     children: [
+                      ListTile(
+                        leading: const Icon(Icons.wifi, color: AppColors.gps),
+                        title: const Text('Connectivity Mode'),
+                        subtitle: Text(
+                          widget.repository.connectivityMode == ConnectivityMode.online
+                              ? 'Online (All sources active)'
+                              : widget.repository.connectivityMode == ConnectivityMode.offline
+                                  ? 'Offline (Local pack verified)'
+                                  : 'Limited (GPS only, pack disabled)'
+                        ),
+                        trailing: DropdownButton<ConnectivityMode>(
+                          value: widget.repository.connectivityMode,
+                          underline: const SizedBox.shrink(),
+                          dropdownColor: AppColors.headerBg,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          onChanged: (mode) {
+                            if (mode != null) {
+                              widget.repository.connectivityMode = mode;
+                            }
+                          },
+                          items: const [
+                            DropdownMenuItem(
+                              value: ConnectivityMode.online,
+                              child: Text('Online', style: TextStyle(color: Colors.white)),
+                            ),
+                            DropdownMenuItem(
+                              value: ConnectivityMode.offline,
+                              child: Text('Offline', style: TextStyle(color: Colors.white)),
+                            ),
+                            DropdownMenuItem(
+                              value: ConnectivityMode.limited,
+                              child: Text('Limited', style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1, indent: 16),
                       ListTile(
                         leading: const Icon(Icons.info_outline, color: AppColors.gps),
                         title: const Text('App Mode'),

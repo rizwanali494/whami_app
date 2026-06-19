@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/region_pack.dart';
+import '../../../data/repositories/whami_mock_repository.dart';
+import 'pack_file_explorer.dart';
 
 class RegionPackCard extends StatefulWidget {
   final RegionPack pack;
-  final VoidCallback onStatusChanged;
+  final WhamiMockRepository repository;
 
   const RegionPackCard({
     super.key,
     required this.pack,
-    required this.onStatusChanged,
+    required this.repository,
   });
 
   @override
@@ -17,7 +19,6 @@ class RegionPackCard extends StatefulWidget {
 }
 
 class _RegionPackCardState extends State<RegionPackCard> {
-  bool _downloading = false;
   bool _verified = false;
 
   Color _typeColor(String type) {
@@ -33,6 +34,7 @@ class _RegionPackCardState extends State<RegionPackCard> {
   Color _statusColor(String status) {
     switch (status) {
       case 'downloaded': return AppColors.trustHigh;
+      case 'downloading': return AppColors.gps;
       case 'available': return AppColors.textSecondary;
       case 'update_needed': return AppColors.alertWarningBorder;
       default: return AppColors.textSecondary;
@@ -42,6 +44,7 @@ class _RegionPackCardState extends State<RegionPackCard> {
   String _statusLabel(String status) {
     switch (status) {
       case 'downloaded': return 'Downloaded';
+      case 'downloading': return 'Downloading...';
       case 'available': return 'Available';
       case 'update_needed': return 'Update Needed';
       default: return status;
@@ -51,17 +54,11 @@ class _RegionPackCardState extends State<RegionPackCard> {
   IconData _statusIcon(String status) {
     switch (status) {
       case 'downloaded': return Icons.check_circle;
+      case 'downloading': return Icons.downloading;
       case 'available': return Icons.cloud_download_outlined;
       case 'update_needed': return Icons.update;
       default: return Icons.help_outline;
     }
-  }
-
-  Future<void> _onDownload() async {
-    setState(() => _downloading = true);
-    await Future.delayed(const Duration(seconds: 2));
-    widget.onStatusChanged();
-    if (mounted) setState(() => _downloading = false);
   }
 
   void _onVerify() => setState(() => _verified = true);
@@ -158,101 +155,204 @@ class _RegionPackCardState extends State<RegionPackCard> {
             const SizedBox(height: 12),
 
             // Included data chips
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: pack.includedData
-                  .map((d) => _DataChip(label: d))
-                  .toList(),
-            ),
-            const SizedBox(height: 10),
-
-            // Trust score
-            Row(
-              children: [
-                const Text(
-                  'Pack Trust Score',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${pack.trustScore}%',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.forTrust(pack.trustScore),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: pack.trustScore / 100,
-                backgroundColor: AppColors.divider,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                    AppColors.forTrust(pack.trustScore)),
-                minHeight: 4,
+            if (!pack.isDownloading) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: pack.includedData
+                    .map((d) => _DataChip(label: d))
+                    .toList(),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 10),
+            ],
+
+            // Staged download progress
+            if (pack.isDownloading) ...[
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: AppColors.gps,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      pack.downloadStage,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${(pack.downloadProgress * 100).toInt()}%',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.gps,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: pack.downloadProgress,
+                  backgroundColor: AppColors.divider,
+                  valueColor: const AlwaysStoppedAnimation<Color>(AppColors.gps),
+                  minHeight: 6,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Est. time remaining: ${((1.0 - pack.downloadProgress) * 6).ceil()}s',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                  ),
+                  TextButton(
+                    onPressed: () => widget.repository.cancelDownload(pack.id),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: AppColors.trustLow,
+                    ),
+                    child: const Text('Cancel', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              // Trust score bar
+              Row(
+                children: [
+                  const Text(
+                    'Pack Trust Score',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${pack.trustScore}%',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.forTrust(pack.trustScore),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: pack.trustScore / 100,
+                  backgroundColor: AppColors.divider,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.forTrust(pack.trustScore)),
+                  minHeight: 4,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Buttons
             Row(
               children: [
-                if (pack.status != 'downloaded')
+                if (pack.status != 'downloaded' && !pack.isDownloading)
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _downloading ? null : _onDownload,
-                      icon: _downloading
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.cloud_download, size: 16),
-                      label: Text(_downloading ? 'Downloading...' : 'Download'),
+                      onPressed: () => widget.repository.startDownload(pack.id),
+                      icon: const Icon(Icons.cloud_download, size: 16),
+                      label: const Text('Download'),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                     ),
                   )
-                else
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _onVerify,
-                      icon: Icon(
-                        _verified ? Icons.verified : Icons.fact_check_outlined,
-                        size: 16,
-                        color: _verified ? AppColors.trustHigh : null,
+                else if (pack.status == 'downloaded') ...[
+                  if (widget.repository.activePackId == pack.id)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.check_circle, color: Colors.white, size: 16),
+                        label: const Text('Active Pack'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.trustHigh,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: AppColors.trustHigh,
+                          disabledForegroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
                       ),
-                      label: Text(_verified ? 'Verified' : 'Verify'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _verified ? AppColors.trustHigh : null,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                    )
+                  else
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => widget.repository.activateRegionPack(pack.id),
+                        icon: const Icon(Icons.bolt, size: 16),
+                        label: const Text('Activate Pack'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.headerBg,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
                       ),
                     ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Delete Pack?'),
+                          content: Text('Are you sure you want to remove ${pack.name} from offline storage?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                widget.repository.deleteRegionPack(pack.id);
+                                Navigator.pop(ctx);
+                              },
+                              style: TextButton.styleFrom(foregroundColor: AppColors.trustLow),
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_outline, color: AppColors.trustLow),
+                    tooltip: 'Delete Region Pack',
                   ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => _PackDetailPage(pack: pack),
+                ],
+                if (!pack.isDownloading) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _PackDetailPage(pack: pack, repository: widget.repository),
+                      ),
                     ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                    child: const Text('Details'),
                   ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  ),
-                  child: const Text('Details'),
-                ),
+                ],
               ],
             ),
           ],
@@ -286,21 +386,12 @@ class _DataChip extends StatelessWidget {
 
 class _PackDetailPage extends StatelessWidget {
   final RegionPack pack;
+  final WhamiMockRepository repository;
 
-  const _PackDetailPage({required this.pack});
+  const _PackDetailPage({required this.pack, required this.repository});
 
   @override
   Widget build(BuildContext context) {
-    final folders = [
-      ('/maps', 'Land maps & vector tiles', Icons.map),
-      ('/marine', 'Marine & lake data layers', Icons.water),
-      ('/landmarks', 'Visual landmark database', Icons.location_on),
-      ('/magnetic', 'Magnetic field baseline grid', Icons.explore),
-      ('/celestial', 'Celestial tables & star catalog', Icons.wb_sunny),
-      ('/imu', 'IMU path templates', Icons.directions_walk),
-      ('/trust', 'Route trust history', Icons.shield),
-    ];
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -314,7 +405,7 @@ class _PackDetailPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Pack info card
+          // Pack metadata card
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -330,63 +421,11 @@ class _PackDetailPage extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Pack Contents',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textSecondary,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...folders.map((f) {
-            final (path, desc, icon) = f;
-            final hasData = pack.includedData.any((d) =>
-                d.toLowerCase().contains(path.substring(1)));
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: hasData
-                        ? AppColors.trustHigh.withOpacity(0.12)
-                        : AppColors.divider,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: hasData ? AppColors.trustHigh : Colors.grey,
-                    size: 18,
-                  ),
-                ),
-                title: Text(
-                  path,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: hasData ? AppColors.textPrimary : Colors.grey,
-                  ),
-                ),
-                subtitle: Text(
-                  desc,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: hasData ? AppColors.textSecondary : Colors.grey,
-                  ),
-                ),
-                trailing: Icon(
-                  hasData ? Icons.check_circle : Icons.remove_circle_outline,
-                  color: hasData ? AppColors.trustHigh : Colors.grey,
-                  size: 18,
-                ),
-              ),
-            );
-          }),
+          const SizedBox(height: 16),
+
+          // File Explorer
+          PackFileExplorer(pack: pack, repository: repository),
+          const SizedBox(height: 24),
         ],
       ),
     );

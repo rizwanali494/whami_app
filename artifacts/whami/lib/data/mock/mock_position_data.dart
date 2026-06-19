@@ -31,7 +31,7 @@ class MockPositionData {
       uncertaintyRadius: 85,
       colorName: 'blue',
       status: 'active',
-      description: 'Fast witness, can be de-weighted',
+      description: 'GPS is only one witness — blended, not blindly trusted',
     ),
     PositionOpinion(
       id: 'landmark',
