@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/connectivity_status.dart';
-import '../../data/repositories/whami_mock_repository.dart';
+import '../../data/repositories/whami_repository.dart';
 
 class SettingsScreen extends StatefulWidget {
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const SettingsScreen({super.key, required this.repository});
 
@@ -118,17 +118,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ListTile(
                         leading: const Icon(Icons.info_outline, color: AppColors.gps),
                         title: const Text('App Mode'),
-                        subtitle: const Text('Prototype / Mock Data'),
+                        subtitle: const Text('Live Sensors (Offline Focused)'),
                         trailing: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: AppColors.alertWarning,
+                            color: AppColors.trustHigh.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppColors.trustHigh.withValues(alpha: 0.4)),
                           ),
                           child: const Text(
-                            'MOCK',
+                            'LIVE',
                             style: TextStyle(
-                              color: Color(0xFFE65100),
+                              color: AppColors.trustHigh,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                             ),
@@ -141,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: const Text('Units'),
                         subtitle: Text(_useMetric ? 'Metric (m, km)' : 'Imperial (ft, mi)'),
                         value: _useMetric,
-                        activeColor: AppColors.headerBg,
+                        activeThumbColor: AppColors.headerBg,
                         onChanged: (val) => setState(() => _useMetric = val),
                       ),
                       const Divider(height: 1, indent: 16),
@@ -186,7 +187,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: AppColors.alertWarning,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: AppColors.alertWarningBorder.withOpacity(0.4),
+                        color: AppColors.alertWarningBorder.withValues(alpha: 0.4),
                       ),
                     ),
                     child: Column(
@@ -288,7 +289,7 @@ class _TrustFormulaCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: AppColors.forTrust(breakdown['finalScore'] as int)
-                        .withOpacity(0.15),
+                        .withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: AppColors.forTrust(breakdown['finalScore'] as int),

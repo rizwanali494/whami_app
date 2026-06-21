@@ -1,8 +1,90 @@
+import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
+import '../../data/models/region_pack.dart';
+import 'region_pack_storage.dart';
 
-class RegionPackCdn {
-  // Center coordinates for each region pack
-  static const Map<String, (double, double)> centers = {
+/// Progress event emitted during download
+class DownloadProgress {
+  final String packId;
+  final double progress; // 0.0 to 1.0
+  final String status; // downloading, completed, failed
+  final String? error;
+
+  const DownloadProgress({
+    required this.packId,
+    required this.progress,
+    required this.status,
+    this.error,
+  });
+}
+
+/// Service that handles downloading and local generation of offline region packs
+class RegionPackDownloader {
+  final RegionPackStorage storage;
+  final _controller = StreamController<DownloadProgress>.broadcast();
+
+  Stream<DownloadProgress> get progressStream => _controller.stream;
+
+  RegionPackDownloader({required this.storage});
+
+  /// Starts downloading a region pack
+  Future<void> startDownload(RegionPack pack) async {
+    final packId = pack.id;
+    _controller.add(DownloadProgress(packId: packId, progress: 0.0, status: 'downloading'));
+
+    try {
+      // Simulate real download chunks to show progress bar updates in UI
+      final totalSteps = 10;
+      for (int i = 1; i <= totalSteps; i++) {
+        await Future.delayed(const Duration(milliseconds: 150));
+        final progressVal = i / totalSteps;
+        _controller.add(DownloadProgress(
+          packId: packId,
+          progress: progressVal * 0.9, // Generate files at 90%
+          status: 'downloading',
+        ));
+      }
+
+      // Generate the GeoJSON pack files
+      final landmarksGeoJson = _generateLandmarks(packId);
+      final magneticGeoJson = _generateMagnetic(packId);
+      final seamapGeoJson = _generateSeamap(packId);
+
+      // Save them using storage
+      await storage.saveGeoJson(packId, 'landmarks.geojson', landmarksGeoJson);
+      await storage.saveGeoJson(packId, 'magnetic.geojson', magneticGeoJson);
+      await storage.saveGeoJson(packId, 'seamap.geojson', seamapGeoJson);
+
+      // Create manifest metadata
+      final manifest = {
+        'id': pack.id,
+        'name': pack.name,
+        'type': pack.type,
+        'size': pack.size,
+        'center_latitude': _getCenter(packId).$1,
+        'center_longitude': _getCenter(packId).$2,
+        'downloaded_at': DateTime.now().toIso8601String(),
+        'version': '2.0.0',
+      };
+
+      await storage.savePackManifest(packId, manifest);
+      await storage.registerPackDownloaded(packId);
+
+      _controller.add(DownloadProgress(packId: packId, progress: 1.0, status: 'completed'));
+    } catch (e) {
+      debugPrint('Failed to download/write region pack $packId: $e');
+      _controller.add(DownloadProgress(
+        packId: packId,
+        progress: 0.0,
+        status: 'failed',
+        error: e.toString(),
+      ));
+    }
+  }
+
+  // ── Regional Data Generators (Self-Contained) ──────────────────────────────
+  static const Map<String, (double, double)> _centers = {
     'sf_bay': (37.8087, -122.4098),
     'tahoe': (39.0968, -120.0324),
     'mountain_view': (37.23, -122.11),
@@ -10,8 +92,7 @@ class RegionPackCdn {
     'coastal_demo': (32.7157, -117.1611),
   };
 
-  // Landmark names specific to each region to make the database feel completely realistic
-  static const Map<String, List<(String, double, double, bool)>> landmarksByRegion = {
+  static const Map<String, List<(String, double, double, bool)>> _landmarksByRegion = {
     'sf_bay': [
       ('Golden Gate Bridge', 37.8199, -122.4786, true),
       ('Bay Bridge West Tower', 37.7983, -122.3778, true),
@@ -59,17 +140,18 @@ class RegionPackCdn {
     ],
   };
 
-  /// Generates a realistic Landmarks GeoJSON structure based on coordinates
-  static Map<String, dynamic> generateLandmarks(String packId) {
-    final center = centers[packId] ?? (37.8087, -122.4098);
-    final landmarkList = landmarksByRegion[packId] ?? [
-      ('Central Landmark Base', center.$1, center.$2, true),
-    ];
+  (double, double) _getCenter(String packId) {
+    return _centers[packId] ?? (37.8087, -122.4098);
+  }
+
+  Map<String, dynamic> _generateLandmarks(String packId) {
+    final center = _getCenter(packId);
+    final list = _landmarksByRegion[packId] ?? [('Central Landmark Base', center.$1, center.$2, true)];
 
     return {
       'type': 'FeatureCollection',
       'region': packId,
-      'features': landmarkList.map((item) {
+      'features': list.map((item) {
         return {
           'type': 'Feature',
           'geometry': {
@@ -87,18 +169,15 @@ class RegionPackCdn {
     };
   }
 
-  /// Generates dynamic realistic Seamap/Chart lines
-  static Map<String, dynamic> generateSeamap(String packId) {
-    final center = centers[packId] ?? (37.8087, -122.4098);
+  Map<String, dynamic> _generateSeamap(String packId) {
+    final center = _getCenter(packId);
     final double lat = center.$1;
     final double lng = center.$2;
 
-    // Draw some mock sea boundaries or channel routes
     return {
       'type': 'FeatureCollection',
       'region': packId,
       'features': [
-        // Channel Lane 1
         {
           'type': 'Feature',
           'geometry': {
@@ -112,7 +191,6 @@ class RegionPackCdn {
           },
           'properties': {'name': 'Primary Transit Channel'}
         },
-        // Shipping Lane 2
         {
           'type': 'Feature',
           'geometry': {
@@ -129,21 +207,18 @@ class RegionPackCdn {
     };
   }
 
-  /// Generates a realistic local magnetic anomaly grid
-  static Map<String, dynamic> generateMagnetic(String packId) {
-    final center = centers[packId] ?? (37.8087, -122.4098);
+  Map<String, dynamic> _generateMagnetic(String packId) {
+    final center = _getCenter(packId);
     final double lat = center.$1;
     final double lng = center.$2;
 
     final List<Map<String, dynamic>> features = [];
     final Random rand = Random(packId.hashCode);
 
-    // Create a 6x6 coordinate anomaly reading grid surrounding the center
     for (int i = -3; i <= 3; i++) {
       for (int j = -3; j <= 3; j++) {
         final double gridLat = lat + (i * 0.012);
         final double gridLng = lng + (j * 0.016);
-        // Vary stability: closer to center is highly stable, edges have variations
         final double dist = sqrt(i * i + j * j);
         final double stability = (0.95 - (dist * 0.03)).clamp(0.70, 0.99) + (rand.nextDouble() * 0.02);
 
@@ -166,5 +241,9 @@ class RegionPackCdn {
       'region': packId,
       'features': features,
     };
+  }
+
+  void dispose() {
+    _controller.close();
   }
 }

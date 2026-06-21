@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/connectivity_status.dart';
-import '../../data/repositories/whami_mock_repository.dart';
+import '../../data/repositories/whami_repository.dart';
 import 'widgets/whami_map_view.dart';
 import 'widgets/trust_badge.dart';
-import 'widgets/scenario_selector.dart';
 import 'widgets/position_opinion_card.dart';
 import 'widgets/map_layer_control.dart';
 
 class MapScreen extends StatefulWidget {
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const MapScreen({super.key, required this.repository});
 
@@ -18,8 +17,6 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  int _selectedScenario = 0;
-
   final Map<String, bool> _layerVisibility = {
     'mapTiles': true,
     'landmarks': true,
@@ -29,7 +26,7 @@ class _MapScreenState extends State<MapScreen> {
     'uncertainty': true,
   };
 
-  WhamiMockRepository get repo => widget.repository;
+  WhamiRepository get repo => widget.repository;
 
   @override
   void initState() {
@@ -49,16 +46,8 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _onScenarioChanged(int index) {
-    setState(() {
-      _selectedScenario = index;
-      repo.setScenario(index);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final scenario = repo.activeScenario;
     final opinions = repo.getPositionOpinions();
     final trustScore = repo.getTrustScore();
     final alertMessage = repo.getAlertMessage();
@@ -120,13 +109,8 @@ class _MapScreenState extends State<MapScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Scenario selector ──────────────────────────────────────
+                // ── Space above map ──────────────────────────────────────────
                 const SizedBox(height: 14),
-                ScenarioSelector(
-                  scenarios: repo.scenarios,
-                  selectedIndex: _selectedScenario,
-                  onChanged: _onScenarioChanged,
-                ),
 
                 // ── Map title ──────────────────────────────────────────────
                 const Padding(
@@ -168,9 +152,11 @@ class _MapScreenState extends State<MapScreen> {
                           vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: modeColor.withOpacity(0.12),
+                          color: modeColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: modeColor.withOpacity(0.4)),
+                          border: Border.all(
+                            color: modeColor.withValues(alpha: 0.4),
+                          ),
                         ),
                         child: Text(
                           modeLabel,
@@ -251,10 +237,14 @@ class _MapScreenState extends State<MapScreen> {
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.headerBg.withOpacity(0.85),
+                                  color: AppColors.headerBg.withValues(
+                                    alpha: 0.85,
+                                  ),
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
-                                    color: AppColors.whami.withOpacity(0.5),
+                                    color: AppColors.whami.withValues(
+                                      alpha: 0.5,
+                                    ),
                                   ),
                                 ),
                                 child: Row(
@@ -299,7 +289,7 @@ class _MapScreenState extends State<MapScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                   child: _AlertCard(
                     message: alertMessage,
-                    scenario: scenario.id,
+                    severity: repo.alertSeverity,
                   ),
                 ),
 
@@ -329,7 +319,6 @@ class _MapScreenState extends State<MapScreen> {
                         .toList(),
                   ),
                 ),
-
                 const SizedBox(height: 24),
               ],
             ),
@@ -344,29 +333,23 @@ class _MapScreenState extends State<MapScreen> {
 
 class _AlertCard extends StatelessWidget {
   final String message;
-  final String scenario;
+  final String severity;
 
-  const _AlertCard({required this.message, required this.scenario});
+  const _AlertCard({required this.message, required this.severity});
 
   @override
   Widget build(BuildContext context) {
-    final bool isCritical = scenario == 'gps_spoof';
-    final bool isWarning =
-        scenario == 'magnetic_interference' ||
-        scenario == 'gps_lost' ||
-        scenario == 'night';
-
     Color bg = AppColors.alertInfo;
     Color border = AppColors.alertInfoBorder;
     Color iconColor = AppColors.alertInfoBorder;
     IconData iconData = Icons.info_outline;
 
-    if (isCritical) {
+    if (severity == 'critical') {
       bg = AppColors.alertCritical;
       border = AppColors.alertCriticalBorder;
       iconColor = AppColors.alertCriticalBorder;
       iconData = Icons.warning_amber_rounded;
-    } else if (isWarning) {
+    } else if (severity == 'warning') {
       bg = AppColors.alertWarning;
       border = AppColors.alertWarningBorder;
       iconColor = AppColors.alertWarningBorder;

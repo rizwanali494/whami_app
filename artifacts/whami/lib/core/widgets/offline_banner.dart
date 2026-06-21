@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/app_colors.dart';
 import '../constants/connectivity_status.dart';
-import '../../data/repositories/whami_mock_repository.dart';
+import '../../data/repositories/whami_repository.dart';
 
 class OfflineBanner extends StatelessWidget {
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const OfflineBanner({super.key, required this.repository});
 
@@ -26,7 +26,7 @@ class OfflineBanner extends StatelessWidget {
 
         switch (mode) {
           case ConnectivityMode.online:
-            bg = AppColors.trustHigh.withOpacity(0.9);
+            bg = AppColors.trustHigh.withValues(alpha: 0.9);
             text = Colors.white;
             message = 'Online · $activePackName Loaded · All Sources Active';
             icon = Icons.wifi;
@@ -52,7 +52,7 @@ class OfflineBanner extends StatelessWidget {
             decoration: BoxDecoration(
               color: bg,
               border: Border(
-                top: BorderSide(color: bg.withOpacity(0.6), width: 0.5),
+                top: BorderSide(color: bg.withValues(alpha: 0.6), width: 0.5),
               ),
             ),
             width: double.infinity,
@@ -77,7 +77,7 @@ class OfflineBanner extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Icon(Icons.keyboard_arrow_up, size: 13, color: text.withOpacity(0.7)),
+                Icon(Icons.keyboard_arrow_up, size: 13, color: text.withValues(alpha: 0.7)),
               ],
             ),
           ),
@@ -209,9 +209,9 @@ class OfflineBanner extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: badgeColor.withOpacity(0.15),
+            color: badgeColor.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: badgeColor.withOpacity(0.4)),
+            border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

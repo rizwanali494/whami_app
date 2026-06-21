@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
-import '../../data/repositories/whami_mock_repository.dart';
+import '../../data/repositories/whami_repository.dart';
 import 'widgets/sensor_card.dart';
 
 class SensorsScreen extends StatelessWidget {
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const SensorsScreen({super.key, required this.repository});
 
@@ -33,7 +33,7 @@ class SensorsScreen extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Chip(
-                  backgroundColor: AppColors.trustHigh.withOpacity(0.15),
+                  backgroundColor: AppColors.trustHigh.withValues(alpha: 0.15),
                   label: Text(
                     '${nonFusion.where((s) => s.status == 'active' || s.status == 'available').length}/${nonFusion.length} Active',
                     style: TextStyle(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/constants/app_colors.dart';
-import '../data/repositories/whami_mock_repository.dart';
+import '../data/repositories/whami_repository.dart';
+import 'whami_router.dart';
 import '../features/map/map_screen.dart';
 import '../features/scan/scan_screen.dart';
 import '../features/sensors/sensors_screen.dart';
@@ -18,10 +19,7 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
 
-  // Single shared repository instance across all screens
-  final WhamiMockRepository _repository = WhamiMockRepository();
-
-  void _onScenarioChanged() => setState(() {});
+  WhamiRepository get _repository => whamiRepo;
 
   @override
   Widget build(BuildContext context) {

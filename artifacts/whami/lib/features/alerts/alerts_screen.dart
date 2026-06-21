@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
-import '../../data/repositories/whami_mock_repository.dart';
+import '../../data/repositories/whami_repository.dart';
 import 'widgets/alert_event_card.dart';
 
 class AlertsScreen extends StatelessWidget {
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const AlertsScreen({super.key, required this.repository});
 
@@ -139,7 +139,7 @@ class _SummaryChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.4)),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Column(
           children: [

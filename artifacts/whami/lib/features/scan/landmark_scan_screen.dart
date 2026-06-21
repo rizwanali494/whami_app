@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
 import '../../core/constants/app_colors.dart';
 
 class LandmarkScanScreen extends StatefulWidget {
@@ -8,13 +9,18 @@ class LandmarkScanScreen extends StatefulWidget {
   State<LandmarkScanScreen> createState() => _LandmarkScanScreenState();
 }
 
-class _LandmarkScanScreenState extends State<LandmarkScanScreen>
-    with SingleTickerProviderStateMixin {
+class _LandmarkScanScreenState extends State<LandmarkScanScreen> with SingleTickerProviderStateMixin {
   bool _scanned = false;
   bool _saved = false;
   bool _usedAsAnchor = false;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
+
+  // Real Camera Controller
+  CameraController? _cameraController;
+  List<CameraDescription> _cameras = [];
+  bool _cameraInitialized = false;
+  String _cameraStatus = 'Initializing camera...';
 
   @override
   void initState() {
@@ -25,11 +31,46 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
     )..repeat(reverse: true);
     _pulseAnim = Tween<double>(begin: 0.85, end: 1.0)
         .animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
+
+    _initCamera();
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isNotEmpty) {
+        _cameraController = CameraController(
+          _cameras.first,
+          ResolutionPreset.medium,
+          enableAudio: false,
+        );
+        await _cameraController!.initialize();
+        if (mounted) {
+          setState(() {
+            _cameraInitialized = true;
+            _cameraStatus = 'Camera active';
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _cameraStatus = 'No cameras found';
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _cameraStatus = 'Camera initialization failed: $e';
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _cameraController?.dispose();
     super.dispose();
   }
 
@@ -58,7 +99,7 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
       ),
       body: Column(
         children: [
-          // Mock camera preview
+          // Camera preview container
           Expanded(
             flex: 3,
             child: Container(
@@ -67,8 +108,26 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // Mock landscape illustration
-                  _buildMockLandscape(),
+                  // Real Camera View or loading placeholder
+                  if (_cameraInitialized && _cameraController != null)
+                    Center(
+                      child: CameraPreview(_cameraController!),
+                    )
+                  else
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.videocam_off, color: Colors.white24, size: 48),
+                          const SizedBox(height: 12),
+                          Text(
+                            _cameraStatus,
+                            style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Scan reticle
                   AnimatedBuilder(
                     animation: _pulseAnim,
@@ -80,16 +139,13 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
                           height: 140,
                           decoration: BoxDecoration(
                             border: Border.all(
-                              color: _scanned
-                                  ? AppColors.trustHigh
-                                  : AppColors.whami,
+                              color: _scanned ? AppColors.trustHigh : AppColors.whami,
                               width: 2,
                             ),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Stack(
                             children: [
-                              // Corners
                               ..._buildCorners(_scanned ? AppColors.trustHigh : AppColors.whami),
                             ],
                           ),
@@ -97,6 +153,7 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
                       );
                     },
                   ),
+
                   // Status chips
                   Positioned(
                     bottom: 16,
@@ -107,8 +164,8 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
                       runSpacing: 8,
                       children: [
                         _Chip(
-                          label: 'CameraX mock active',
-                          color: AppColors.trustHigh,
+                          label: _cameraInitialized ? 'Camera active' : 'Camera off',
+                          color: _cameraInitialized ? AppColors.trustHigh : Colors.grey,
                           icon: Icons.videocam,
                         ),
                         _Chip(
@@ -131,6 +188,7 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
                       ],
                     ),
                   ),
+
                   // Mode label
                   Positioned(
                     top: 12,
@@ -142,7 +200,7 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text(
-                        'LANDMARK MOCK',
+                        'LANDMARK SCAN',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 10,
@@ -163,9 +221,9 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
               margin: const EdgeInsets.all(16),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: AppColors.trustHigh.withOpacity(0.1),
+                color: AppColors.trustHigh.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.trustHigh.withOpacity(0.4)),
+                border: Border.all(color: AppColors.trustHigh.withValues(alpha: 0.4)),
               ),
               child: Row(
                 children: [
@@ -257,13 +315,6 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
     );
   }
 
-  Widget _buildMockLandscape() {
-    return CustomPaint(
-      painter: _LandscapePainter(),
-      child: Container(),
-    );
-  }
-
   List<Widget> _buildCorners(Color color) {
     const double size = 16;
     const double weight = 2.5;
@@ -326,66 +377,6 @@ class _CornerPainter extends CustomPainter {
   bool shouldRepaint(_CornerPainter old) => false;
 }
 
-class _LandscapePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Sky gradient
-    final skyPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [const Color(0xFF0D1B2A), const Color(0xFF1A3A5C)],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height * 0.55));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height * 0.55), skyPaint);
-
-    // Water
-    final waterPaint = Paint()..color = const Color(0xFF0A2540);
-    canvas.drawRect(
-        Rect.fromLTWH(0, size.height * 0.55, size.width, size.height * 0.45),
-        waterPaint);
-
-    // Mountains
-    final mtPaint = Paint()..color = const Color(0xFF1C3A52);
-    final mtPath = Path()
-      ..moveTo(0, size.height * 0.55)
-      ..lineTo(size.width * 0.15, size.height * 0.28)
-      ..lineTo(size.width * 0.30, size.height * 0.42)
-      ..lineTo(size.width * 0.45, size.height * 0.20)
-      ..lineTo(size.width * 0.60, size.height * 0.38)
-      ..lineTo(size.width * 0.78, size.height * 0.24)
-      ..lineTo(size.width, size.height * 0.40)
-      ..lineTo(size.width, size.height * 0.55)
-      ..close();
-    canvas.drawPath(mtPath, mtPaint);
-
-    // Harbor Tower silhouette
-    final towerPaint = Paint()..color = const Color(0xFF0F2535);
-    canvas.drawRect(
-        Rect.fromLTWH(size.width * 0.46, size.height * 0.20, 10, size.height * 0.35),
-        towerPaint);
-    canvas.drawRect(
-        Rect.fromLTWH(size.width * 0.43, size.height * 0.20, 16, 6),
-        towerPaint);
-
-    // Stars
-    final starPaint = Paint()..color = Colors.white70..strokeWidth = 1;
-    final stars = [
-      Offset(size.width * 0.1, size.height * 0.08),
-      Offset(size.width * 0.3, size.height * 0.05),
-      Offset(size.width * 0.6, size.height * 0.10),
-      Offset(size.width * 0.75, size.height * 0.04),
-      Offset(size.width * 0.9, size.height * 0.12),
-      Offset(size.width * 0.2, size.height * 0.15),
-    ];
-    for (final star in stars) {
-      canvas.drawCircle(star, 1.5, starPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_LandscapePainter old) => false;
-}
-
 class _Chip extends StatelessWidget {
   final String label;
   final Color color;
@@ -400,7 +391,7 @@ class _Chip extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.black54,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.6)),
+        border: Border.all(color: color.withValues(alpha: 0.6)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

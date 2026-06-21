@@ -20,7 +20,7 @@ class PositionOpinionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isUnstable
-              ? AppColors.alertWarningBorder.withOpacity(0.5)
+              ? AppColors.alertWarningBorder.withValues(alpha: 0.5)
               : AppColors.divider,
         ),
       ),
@@ -32,8 +32,8 @@ class PositionOpinionCard extends StatelessWidget {
             height: 32,
             decoration: BoxDecoration(
               color: isUnavailable
-                  ? Colors.grey.withOpacity(0.15)
-                  : color.withOpacity(0.15),
+                  ? Colors.grey.withValues(alpha: 0.15)
+                  : color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
               border: Border.all(
                 color: isUnavailable ? Colors.grey : color,

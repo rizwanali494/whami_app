@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
 import '../../core/constants/app_colors.dart';
 
 class ArcoreScanScreen extends StatefulWidget {
@@ -8,13 +9,18 @@ class ArcoreScanScreen extends StatefulWidget {
   State<ArcoreScanScreen> createState() => _ArcoreScanScreenState();
 }
 
-class _ArcoreScanScreenState extends State<ArcoreScanScreen>
-    with SingleTickerProviderStateMixin {
+class _ArcoreScanScreenState extends State<ArcoreScanScreen> with SingleTickerProviderStateMixin {
   bool _scanning = false;
   String _poseQuality = 'Medium';
   int _featurePoints = 128;
   int _visualMatch = 74;
   late AnimationController _gridAnim;
+
+  // Real Camera Controller
+  CameraController? _cameraController;
+  List<CameraDescription> _cameras = [];
+  bool _cameraInitialized = false;
+  String _cameraStatus = 'Initializing camera...';
 
   @override
   void initState() {
@@ -23,11 +29,46 @@ class _ArcoreScanScreenState extends State<ArcoreScanScreen>
       vsync: this,
       duration: const Duration(seconds: 3),
     )..repeat();
+
+    _initCamera();
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isNotEmpty) {
+        _cameraController = CameraController(
+          _cameras.first,
+          ResolutionPreset.medium,
+          enableAudio: false,
+        );
+        await _cameraController!.initialize();
+        if (mounted) {
+          setState(() {
+            _cameraInitialized = true;
+            _cameraStatus = 'Camera active';
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _cameraStatus = 'No cameras found';
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _cameraStatus = 'Camera initialization failed: $e';
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _gridAnim.dispose();
+    _cameraController?.dispose();
     super.dispose();
   }
 
@@ -99,7 +140,27 @@ class _ArcoreScanScreenState extends State<ArcoreScanScreen>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // Animated AR grid
+                  // Real Camera View or loading placeholder
+                  if (_cameraInitialized && _cameraController != null)
+                    Center(
+                      child: CameraPreview(_cameraController!),
+                    )
+                  else
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.videocam_off, color: Colors.white24, size: 48),
+                          const SizedBox(height: 12),
+                          Text(
+                            _cameraStatus,
+                            style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Animated AR grid overlay on top of camera
                   AnimatedBuilder(
                     animation: _gridAnim,
                     builder: (ctx, _) => CustomPaint(
@@ -109,6 +170,7 @@ class _ArcoreScanScreenState extends State<ArcoreScanScreen>
                       ),
                     ),
                   ),
+
                   // Center reticle
                   Container(
                     width: 60,
@@ -126,6 +188,7 @@ class _ArcoreScanScreenState extends State<ArcoreScanScreen>
                       size: 24,
                     ),
                   ),
+
                   // Mode tag
                   Positioned(
                     top: 12,
@@ -138,7 +201,7 @@ class _ArcoreScanScreenState extends State<ArcoreScanScreen>
                         border: Border.all(color: Colors.white24),
                       ),
                       child: const Text(
-                        'ARCore Mode: Mock',
+                        'ARCore Mode: Live',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 10,
@@ -148,6 +211,7 @@ class _ArcoreScanScreenState extends State<ArcoreScanScreen>
                       ),
                     ),
                   ),
+
                   // Stats overlay
                   Positioned(
                     bottom: 16,
@@ -343,7 +407,6 @@ class _ArGridPainter extends CustomPainter {
       ..color = Color.fromRGBO(0, 200, 150, baseAlpha)
       ..strokeWidth = 0.8;
 
-    // Horizontal lines
     const int lines = 12;
     final offset = progress * (size.height / lines);
     for (int i = -1; i <= lines + 1; i++) {
@@ -351,13 +414,11 @@ class _ArGridPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
 
-    // Vertical lines
     for (int i = 0; i <= 8; i++) {
       final x = i * size.width / 8;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
 
-    // Corner brackets for active mode
     if (active) {
       final bracketPaint = Paint()
         ..color = const Color(0xFF00FF99)

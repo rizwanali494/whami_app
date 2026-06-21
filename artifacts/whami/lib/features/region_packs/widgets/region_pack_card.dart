@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/region_pack.dart';
-import '../../../data/repositories/whami_mock_repository.dart';
+import '../../../data/repositories/whami_repository.dart';
 import 'pack_file_explorer.dart';
 
 class RegionPackCard extends StatefulWidget {
   final RegionPack pack;
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const RegionPackCard({
     super.key,
@@ -19,7 +19,6 @@ class RegionPackCard extends StatefulWidget {
 }
 
 class _RegionPackCardState extends State<RegionPackCard> {
-  bool _verified = false;
 
   Color _typeColor(String type) {
     switch (type) {
@@ -61,7 +60,6 @@ class _RegionPackCardState extends State<RegionPackCard> {
     }
   }
 
-  void _onVerify() => setState(() => _verified = true);
 
   @override
   Widget build(BuildContext context) {
@@ -83,9 +81,9 @@ class _RegionPackCardState extends State<RegionPackCard> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: typeColor.withOpacity(0.12),
+                    color: typeColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: typeColor.withOpacity(0.4)),
+                    border: Border.all(color: typeColor.withValues(alpha: 0.4)),
                   ),
                   child: Text(
                     pack.type.toUpperCase(),
@@ -386,7 +384,7 @@ class _DataChip extends StatelessWidget {
 
 class _PackDetailPage extends StatelessWidget {
   final RegionPack pack;
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const _PackDetailPage({required this.pack, required this.repository});
 

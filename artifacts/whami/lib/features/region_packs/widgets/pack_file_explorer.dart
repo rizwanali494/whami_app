@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/region_pack.dart';
-import '../../../data/repositories/whami_mock_repository.dart';
+import '../../../data/repositories/whami_repository.dart';
+import '../../../data/models/landmark.dart';
 
 class PackFileExplorer extends StatefulWidget {
   final RegionPack pack;
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const PackFileExplorer({
     super.key,
@@ -138,7 +139,7 @@ class _PackFileExplorerState extends State<PackFileExplorer> {
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
                       color: hasData
-                          ? AppColors.gps.withOpacity(0.08)
+                          ? AppColors.gps.withValues(alpha: 0.08)
                           : AppColors.divider,
                       shape: BoxShape.circle,
                     ),
@@ -306,9 +307,9 @@ class _PackFileExplorerState extends State<PackFileExplorer> {
 
   Widget _buildFolderContents(String type) {
     if (type == 'landmarks') {
-      final landmarks = widget.repository.getLandmarks();
+      final List<Landmark> landmarks = widget.repository.getLandmarks();
       return Container(
-        color: AppColors.background.withOpacity(0.5),
+        color: AppColors.background.withValues(alpha: 0.5),
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(
           children: landmarks.map((landmark) {
@@ -378,7 +379,7 @@ class _PackFileExplorerState extends State<PackFileExplorer> {
 
     return Container(
       width: double.infinity,
-      color: AppColors.background.withOpacity(0.5),
+      color: AppColors.background.withValues(alpha: 0.5),
       padding: const EdgeInsets.all(12),
       child: Text(
         contentText,

@@ -88,7 +88,7 @@ class _SplashScreenState extends State<SplashScreen>
                               shape: BoxShape.circle,
                               border: Border.all(
                                   color: AppColors.whami, width: 2.5),
-                              color: AppColors.whami.withOpacity(0.12),
+                              color: AppColors.whami.withValues(alpha: 0.12),
                             ),
                             child: const Center(
                               child: Text(
@@ -139,7 +139,7 @@ class _SplashScreenState extends State<SplashScreen>
                           horizontal: 20, vertical: 10),
                       decoration: BoxDecoration(
                         border: Border.all(
-                            color: AppColors.whami.withOpacity(0.4)),
+                            color: AppColors.whami.withValues(alpha: 0.4)),
                         borderRadius: BorderRadius.circular(30),
                       ),
                       child: const Text(
@@ -234,7 +234,7 @@ class _SourceDot extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(color: color.withOpacity(0.6), fontSize: 9),
+            style: TextStyle(color: color.withValues(alpha: 0.6), fontSize: 9),
           ),
           const SizedBox(width: 4),
           Container(
@@ -252,7 +252,7 @@ class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.04)
+      ..color = Colors.white.withValues(alpha: 0.04)
       ..strokeWidth = 0.5;
     const int lines = 16;
     for (int i = 0; i <= lines; i++) {

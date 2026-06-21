@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
-import '../../data/repositories/whami_mock_repository.dart';
+import '../../data/repositories/whami_repository.dart';
 import 'widgets/region_pack_card.dart';
 
 class RegionPackScreen extends StatefulWidget {
-  final WhamiMockRepository repository;
+  final WhamiRepository repository;
 
   const RegionPackScreen({super.key, required this.repository});
 
@@ -50,7 +50,7 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Chip(
-                  backgroundColor: AppColors.trustHigh.withOpacity(0.15),
+                  backgroundColor: AppColors.trustHigh.withValues(alpha: 0.15),
                   label: Text(
                     '$downloaded Downloaded',
                     style: TextStyle(

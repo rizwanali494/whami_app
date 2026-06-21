@@ -57,7 +57,7 @@ class AppColors {
       case 'magnetic': return magneticCircle;
       case 'sextant': return sextantCircle;
       case 'imu': return imuCircle;
-      default: return Colors.grey.withOpacity(0.2);
+      default: return Colors.grey.withValues(alpha: 0.2);
     }
   }
 

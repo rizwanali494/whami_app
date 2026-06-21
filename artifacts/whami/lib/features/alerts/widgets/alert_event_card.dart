@@ -64,7 +64,7 @@ class AlertEventCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: color.withOpacity(0.4)),
+                border: Border.all(color: color.withValues(alpha: 0.4)),
               ),
               child: Icon(_iconFor(event.iconName), color: color, size: 22),
             ),
@@ -91,7 +91,7 @@ class AlertEventCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: bg,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: color.withOpacity(0.5)),
+                          border: Border.all(color: color.withValues(alpha: 0.5)),
                         ),
                         child: Text(
                           _severityLabel(event.severity),
@@ -107,7 +107,7 @@ class AlertEventCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    event.time,
+                    event.timeAgo,
                     style: const TextStyle(
                       fontSize: 11,
                       color: AppColors.textSecondary,
