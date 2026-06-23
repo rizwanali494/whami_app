@@ -19,6 +19,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
+
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -44,7 +45,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Future.delayed(const Duration(milliseconds: 2200), () {
+    Future.delayed(const Duration(milliseconds: 2600), () {
       if (mounted) context.go('/map');
     });
   }
@@ -62,10 +63,7 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         children: [
           // Background grid
-          CustomPaint(
-            painter: _GridPainter(),
-            child: Container(),
-          ),
+          CustomPaint(painter: _GridPainter(), child: Container()),
           // Center content
           Center(
             child: Column(
@@ -87,7 +85,9 @@ class _SplashScreenState extends State<SplashScreen>
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                  color: AppColors.whami, width: 2.5),
+                                color: AppColors.whami,
+                                width: 2.5,
+                              ),
                               color: AppColors.whami.withValues(alpha: 0.12),
                             ),
                             child: const Center(
@@ -136,10 +136,13 @@ class _SplashScreenState extends State<SplashScreen>
                     opacity: _taglineFade,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 10),
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         border: Border.all(
-                            color: AppColors.whami.withValues(alpha: 0.4)),
+                          color: AppColors.whami.withValues(alpha: 0.4),
+                        ),
                         borderRadius: BorderRadius.circular(30),
                       ),
                       child: const Text(
@@ -173,7 +176,8 @@ class _SplashScreenState extends State<SplashScreen>
                       child: LinearProgressIndicator(
                         backgroundColor: Colors.white10,
                         valueColor: const AlwaysStoppedAnimation<Color>(
-                            AppColors.whami),
+                          AppColors.whami,
+                        ),
                         minHeight: 2,
                       ),
                     ),

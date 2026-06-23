@@ -172,7 +172,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
       await _controller!.addLineLayer(
         'seamap',
         'seamap-layer',
-        const LineLayerProperties(lineColor: '#1A6B9E', lineWidth: 1.8),
+        const LineLayerProperties(lineColor: '#00E5FF', lineWidth: 3.0),
       );
 
       setState(() {
@@ -295,9 +295,11 @@ class _WhamiMapViewState extends State<WhamiMapView>
               target: centerCoords,
               zoom: 12.5,
             ),
+
             onMapCreated: _onMapCreated,
             styleString: jsonEncode(styleJson),
-            myLocationEnabled: false,
+            myLocationEnabled: true,
+            myLocationTrackingMode: MyLocationTrackingMode.tracking,
             zoomGesturesEnabled: true,
             dragEnabled: true,
             compassEnabled: true,

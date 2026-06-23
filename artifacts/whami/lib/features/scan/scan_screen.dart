@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../data/repositories/whami_repository.dart';
 import 'landmark_scan_screen.dart';
 import 'arcore_scan_screen.dart';
 
 class ScanScreen extends StatelessWidget {
-  const ScanScreen({super.key});
+  final WhamiRepository repository;
+
+  const ScanScreen({super.key, required this.repository});
 
   @override
   Widget build(BuildContext context) {
@@ -34,15 +37,15 @@ class ScanScreen extends StatelessWidget {
               ),
               Tab(
                 icon: Icon(Icons.view_in_ar, size: 18),
-                text: 'ARCore Scan',
+                text: 'AR Scan',
               ),
             ],
           ),
         ),
-        body: const TabBarView(
+        body: TabBarView(
           children: [
-            LandmarkScanScreen(),
-            ArcoreScanScreen(),
+            LandmarkScanScreen(repository: repository),
+            ArScanScreen(repository: repository),
           ],
         ),
       ),

@@ -25,7 +25,7 @@ class _MainNavigationState extends State<MainNavigation> {
   Widget build(BuildContext context) {
     final screens = [
       MapScreen(repository: _repository),
-      const ScanScreen(),
+      ScanScreen(repository: _repository),
       SensorsScreen(repository: _repository),
       RegionPackScreen(repository: _repository),
       AlertsScreen(repository: _repository),

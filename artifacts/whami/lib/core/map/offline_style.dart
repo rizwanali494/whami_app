@@ -24,7 +24,7 @@ class OfflineStyle {
           'id': 'solid-background',
           'type': 'background',
           'paint': {
-            'background-color': '#0B0F19', // Rich dark midnight navy
+            'background-color': '#5D6E96', // Rich dark midnight navy
           },
         },
         {

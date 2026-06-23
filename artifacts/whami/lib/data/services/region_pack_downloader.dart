@@ -144,6 +144,29 @@ class RegionPackDownloader {
     return _centers[packId] ?? (37.8087, -122.4098);
   }
 
+  /// Infer visual landmark category from the landmark name.
+  /// Categories match the spec's /landmarks visual feature descriptor types.
+  static String _inferLandmarkType(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('bridge') || n.contains('pylon') || n.contains('arch')) return 'bridge';
+    if (n.contains('tower') || n.contains('spire') || n.contains('cupola') ||
+        n.contains('mast') || n.contains('dome') || n.contains('observatory')) return 'tower';
+    if (n.contains('mountain') || n.contains('peak') || n.contains('summit') ||
+        n.contains('ridge') || n.contains('fault') || n.contains('lookout') ||
+        n.contains('rock') || n.contains('point') || n.contains('boulevard')) return 'mountain';
+    if (n.contains('coast') || n.contains('cliff') || n.contains('shore') ||
+        n.contains('spit') || n.contains('cove') || n.contains('harbor') ||
+        n.contains('harbour') || n.contains('bay') || n.contains('channel') ||
+        n.contains('maeslantkering') || n.contains('gate') || n.contains('waals')) return 'harbor';
+    if (n.contains('island') || n.contains('alcatraz') || n.contains('angel') ||
+        n.contains('fannette')) return 'island';
+    if (n.contains('light') || n.contains('lighthouse')) return 'coastline';
+    if (n.contains('fort') || n.contains('building') || n.contains('hotel') ||
+        n.contains('midway') || n.contains('star of india') || n.contains('ferry') ||
+        n.contains('hangar')) return 'building';
+    return 'other';
+  }
+
   Map<String, dynamic> _generateLandmarks(String packId) {
     final center = _getCenter(packId);
     final list = _landmarksByRegion[packId] ?? [('Central Landmark Base', center.$1, center.$2, true)];
@@ -160,7 +183,7 @@ class RegionPackDownloader {
           },
           'properties': {
             'name': item.$1,
-            'type': 'landmark',
+            'landmark_type': _inferLandmarkType(item.$1),
             'confidence': 0.75 + (Random(item.$1.hashCode).nextDouble() * 0.20),
             'saved': item.$4,
           }

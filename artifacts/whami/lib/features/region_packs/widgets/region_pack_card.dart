@@ -22,11 +22,15 @@ class _RegionPackCardState extends State<RegionPackCard> {
 
   Color _typeColor(String type) {
     switch (type) {
-      case 'Marine': return AppColors.gps;
-      case 'Lake': return AppColors.sextant;
-      case 'Hiking': return AppColors.magnetic;
-      case 'Urban': return AppColors.imu;
-      default: return AppColors.textSecondary;
+      case 'Marine':  return AppColors.gps;
+      case 'Lake':    return AppColors.sextant;
+      case 'Hiking':  return AppColors.magnetic;
+      case 'Urban':   return AppColors.imu;
+      case 'River':   return const Color(0xFF00ACC1);  // Cyan
+      case 'Island':  return const Color(0xFFFF7043);  // Deep Orange
+      case 'Desert':  return const Color(0xFFF9A825);  // Amber
+      case 'Arctic':  return const Color(0xFF5C6BC0);  // Indigo
+      default:        return AppColors.textSecondary;
     }
   }
 
@@ -267,75 +271,62 @@ class _RegionPackCardState extends State<RegionPackCard> {
             // Buttons
             Row(
               children: [
-                if (pack.status != 'downloaded' && !pack.isDownloading)
+                if (widget.repository.activePackId == pack.id)
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: () => widget.repository.startDownload(pack.id),
-                      icon: const Icon(Icons.cloud_download, size: 16),
-                      label: const Text('Download'),
+                      onPressed: null,
+                      icon: const Icon(Icons.check_circle, color: Colors.white, size: 16),
+                      label: const Text('Active Pack'),
                       style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.trustHigh,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: AppColors.trustHigh,
+                        disabledForegroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                     ),
                   )
-                else if (pack.status == 'downloaded') ...[
-                  if (widget.repository.activePackId == pack.id)
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: null,
-                        icon: const Icon(Icons.check_circle, color: Colors.white, size: 16),
-                        label: const Text('Active Pack'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.trustHigh,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppColors.trustHigh,
-                          disabledForegroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => widget.repository.activateRegionPack(pack.id),
-                        icon: const Icon(Icons.bolt, size: 16),
-                        label: const Text('Activate Pack'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.headerBg,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
+                else
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => widget.repository.activateRegionPack(pack.id),
+                      icon: const Icon(Icons.bolt, size: 16),
+                      label: const Text('Activate Pack'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.headerBg,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                     ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Delete Pack?'),
-                          content: Text('Are you sure you want to remove ${pack.name} from offline storage?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                widget.repository.deleteRegionPack(pack.id);
-                                Navigator.pop(ctx);
-                              },
-                              style: TextButton.styleFrom(foregroundColor: AppColors.trustLow),
-                              child: const Text('Delete'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.delete_outline, color: AppColors.trustLow),
-                    tooltip: 'Delete Region Pack',
                   ),
-                ],
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Delete Pack?'),
+                        content: Text('Are you sure you want to remove ${pack.name} from offline storage?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              widget.repository.deleteRegionPack(pack.id);
+                              Navigator.pop(ctx);
+                            },
+                            style: TextButton.styleFrom(foregroundColor: AppColors.trustLow),
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.delete_outline, color: AppColors.trustLow),
+                  tooltip: 'Delete Region Pack',
+                ),
                 if (!pack.isDownloading) ...[
                   const SizedBox(width: 8),
                   OutlinedButton(

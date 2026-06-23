@@ -3,16 +3,16 @@ PODS:
     - Flutter
   - connectivity_plus (0.0.1):
     - Flutter
-  - environment_sensors (0.0.1):
-    - Flutter
   - Flutter (1.0.0)
   - geolocator_apple (1.2.0):
     - Flutter
     - FlutterMacOS
-  - MapLibre (6.5.0)
-  - maplibre_gl (0.0.1):
+  - MapLibre (6.27.0)
+  - maplibre_gl (0.26.2):
     - Flutter
-    - MapLibre (= 6.5.0)
+    - MapLibre (= 6.27.0)
+  - package_info_plus (0.4.5):
+    - Flutter
   - path_provider_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
@@ -22,10 +22,10 @@ PODS:
 DEPENDENCIES:
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
-  - environment_sensors (from `.symlinks/plugins/environment_sensors/ios`)
   - Flutter (from `Flutter`)
   - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - maplibre_gl (from `.symlinks/plugins/maplibre_gl/ios`)
+  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - sensors_plus (from `.symlinks/plugins/sensors_plus/ios`)
 
@@ -38,27 +38,27 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/camera_avfoundation/ios"
   connectivity_plus:
     :path: ".symlinks/plugins/connectivity_plus/ios"
-  environment_sensors:
-    :path: ".symlinks/plugins/environment_sensors/ios"
   Flutter:
     :path: Flutter
   geolocator_apple:
     :path: ".symlinks/plugins/geolocator_apple/darwin"
   maplibre_gl:
     :path: ".symlinks/plugins/maplibre_gl/ios"
+  package_info_plus:
+    :path: ".symlinks/plugins/package_info_plus/ios"
   path_provider_foundation:
     :path: ".symlinks/plugins/path_provider_foundation/darwin"
   sensors_plus:
     :path: ".symlinks/plugins/sensors_plus/ios"
 
 SPEC CHECKSUMS:
-  camera_avfoundation: 5675ca25298b6f81fa0a325188e7df62cc217741
+  camera_avfoundation: 968a9a5323c79a99c166ad9d7866bfd2047b5a9b
   connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
-  environment_sensors: fb50ac03536e9249ae0edac59b37b0b5e2a6e9e6
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
-  MapLibre: 0ebfa9329d313cec8bf0a5ba5a336a1dc903785e
-  maplibre_gl: 7fc8dd5a5f356891c38f227fe1647d33b9af0400
+  MapLibre: 96726270455ffd183688cf0bd2a3881b0212a57e
+  maplibre_gl: 6bd5bd04d37056c0b6b652b854196ff82e5b0e0c
+  package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
   sensors_plus: 6a11ed0c2e1d0bd0b20b4029d3bad27d96e0c65b
 
