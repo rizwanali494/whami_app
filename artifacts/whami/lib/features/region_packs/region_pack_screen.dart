@@ -62,15 +62,15 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
   @override
   Widget build(BuildContext context) {
     final packs = widget.repository.getRegionPacks();
-    final downloaded = packs.where((p) => p.status == 'downloaded').length;
     final filtered = _filteredPacks(packs);
-    
+
     // Move active pack to top of list
     final activeId = widget.repository.activePackId;
+    final activePack = widget.repository.getRegionPackById(activeId);
     final activeIndex = filtered.indexWhere((p) => p.id == activeId);
     if (activeIndex > 0) {
-      final activePack = filtered.removeAt(activeIndex);
-      filtered.insert(0, activePack);
+      final ap = filtered.removeAt(activeIndex);
+      filtered.insert(0, ap);
     }
 
     return Scaffold(
@@ -88,21 +88,34 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
               ),
             ),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Chip(
-                  backgroundColor: AppColors.trustHigh.withValues(alpha: 0.15),
-                  label: Text(
-                    '$downloaded Downloaded',
-                    style: TextStyle(
-                      color: AppColors.trustHigh,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+              if (activePack != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Chip(
+                    backgroundColor: AppColors.trustHigh.withValues(
+                      alpha: 0.18,
                     ),
+                    avatar: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppColors.trustHigh,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    label: Text(
+                      activePack.name,
+                      style: const TextStyle(
+                        color: AppColors.trustHigh,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                   ),
-                  padding: EdgeInsets.zero,
                 ),
-              ),
             ],
           ),
 

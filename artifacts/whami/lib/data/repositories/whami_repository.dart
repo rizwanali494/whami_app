@@ -31,6 +31,67 @@ class WhamiRepository extends ChangeNotifier {
   bool _isTracking = false;
   final List<Map<String, double>> _trail = [];
 
+  static const Map<String, List<double>> _packCoordinates = {
+    'sf_bay': [37.7140, -122.3078],
+    'chesapeake': [38.2281, -76.2629],
+    'gulf_mexico': [25.0, -90.0],
+    'great_lakes': [45.0, -82.0],
+    'tahoe': [39.0885, -120.0504],
+    'mountain_view': [37.1413, -121.9974],
+    'grand_canyon': [36.0980, -112.0963],
+    'yellowstone': [44.4, -110.5],
+    'new_york_harbor': [40.9076, -73.4652],
+    'mississippi_river': [39.5530, -91.1586],
+    'vancouver_harbour': [49.2908, -123.1183],
+    'caribbean_islands': [15.0, -75.0],
+    'yucatan_coast': [18.8017, -89.7427],
+    'amazon_river': [-3.0, -60.0],
+    'patagonia': [-50.0, -73.0],
+    'rio_de_janeiro': [-22.8169, -43.1272],
+    'galapagos': [-0.6288, -90.3639],
+    'rotterdam': [51.9043, 4.4298],
+    'english_channel': [50.0, -2.0],
+    'north_sea': [56.0, 3.0],
+    'mediterranean_west': [38.0, 5.0],
+    'mediterranean_east': [34.0, 25.0],
+    'thames_estuary': [51.5, 0.5],
+    'alps_hiking': [46.5, 9.0],
+    'fjords_norway': [62.1266, 7.1658],
+    'baltic_sea': [58.0, 20.0],
+    'suez_canal': [30.6053, 32.3331],
+    'cape_town': [-33.8917, 18.4597],
+    'nile_river': [20.0, 32.0],
+    'sahara_desert': [23.0, 10.0],
+    'victoria_lake': [-1.0, 33.0],
+    'mombasa_port': [-4.0256, 39.6120],
+    'straits_of_malacca': [4.0, 100.0],
+    'shanghai_port': [31.2, 121.5],
+    'tokyo_bay': [35.4700, 139.8477],
+    'mumbai_port': [18.9518, 73.0187],
+    'maldives': [3.2, 73.0],
+    'himalaya_hiking': [28.0, 84.0],
+    'yangtze_river': [30.5641, 114.2917],
+    'gobi_desert': [43.0, 105.0],
+    'persian_gulf': [26.0, 52.0],
+    'red_sea': [20.0, 38.0],
+    'bering_sea': [58.0, -175.0],
+    'great_barrier_reef': [-20.3581, 148.9521],
+    'sydney_harbour': [-33.8645, 151.2343],
+    'new_zealand_fiords': [-45.2916, 167.4880],
+    'hawaii_islands': [19.5896, -155.4487],
+    'papua_new_guinea': [-9.4221, 147.0835],
+    'arctic_ocean': [85.0, 0.0],
+    'antarctica': [-80.0, 0.0],
+    'svalbard': [78.0, 15.0],
+    'lake_baikal': [53.5, 108.0],
+    'siberian_tundra': [66.0, 100.0],
+    'pacific_ocean': [0.0, -150.0],
+    'atlantic_ocean': [0.0, -30.0],
+    'indian_ocean': [-20.0, 80.0],
+    'southern_ocean': [-60.0, 0.0],
+    'coastal_demo': [37.7, -122.4],
+  };
+
   // Active pack state
   String _activePackId = '';
   Map<String, dynamic>? _loadedLandmarks;
@@ -1543,66 +1604,7 @@ class WhamiRepository extends ChangeNotifier {
     if (loc != null) {
       double minDistance = double.infinity;
 
-      final Map<String, List<double>> coords = {
-        'sf_bay': [37.7140, -122.3078],
-        'chesapeake': [38.2281, -76.2629],
-        'gulf_mexico': [25.0, -90.0],
-        'great_lakes': [45.0, -82.0],
-        'tahoe': [39.0885, -120.0504],
-        'mountain_view': [37.1413, -121.9974],
-        'grand_canyon': [36.0980, -112.0963],
-        'yellowstone': [44.4, -110.5],
-        'new_york_harbor': [40.9076, -73.4652],
-        'mississippi_river': [39.5530, -91.1586],
-        'vancouver_harbour': [49.2908, -123.1183],
-        'caribbean_islands': [15.0, -75.0],
-        'yucatan_coast': [18.8017, -89.7427],
-        'amazon_river': [-3.0, -60.0],
-        'patagonia': [-50.0, -73.0],
-        'rio_de_janeiro': [-22.8169, -43.1272],
-        'galapagos': [-0.6288, -90.3639],
-        'rotterdam': [51.9043, 4.4298],
-        'english_channel': [50.0, -2.0],
-        'north_sea': [56.0, 3.0],
-        'mediterranean_west': [38.0, 5.0],
-        'mediterranean_east': [34.0, 25.0],
-        'thames_estuary': [51.5, 0.5],
-        'alps_hiking': [46.5, 9.0],
-        'fjords_norway': [62.1266, 7.1658],
-        'baltic_sea': [58.0, 20.0],
-        'suez_canal': [30.6053, 32.3331],
-        'cape_town': [-33.8917, 18.4597],
-        'nile_river': [20.0, 32.0],
-        'sahara_desert': [23.0, 10.0],
-        'victoria_lake': [-1.0, 33.0],
-        'mombasa_port': [-4.0256, 39.6120],
-        'straits_of_malacca': [4.0, 100.0],
-        'shanghai_port': [31.2, 121.5],
-        'tokyo_bay': [35.4700, 139.8477],
-        'mumbai_port': [18.9518, 73.0187],
-        'maldives': [3.2, 73.0],
-        'himalaya_hiking': [28.0, 84.0],
-        'yangtze_river': [30.5641, 114.2917],
-        'gobi_desert': [43.0, 105.0],
-        'persian_gulf': [26.0, 52.0],
-        'red_sea': [20.0, 38.0],
-        'bering_sea': [58.0, -175.0],
-        'great_barrier_reef': [-20.3581, 148.9521],
-        'sydney_harbour': [-33.8645, 151.2343],
-        'new_zealand_fiords': [-45.2916, 167.4880],
-        'hawaii_islands': [19.5896, -155.4487],
-        'papua_new_guinea': [-9.4221, 147.0835],
-        'arctic_ocean': [85.0, 0.0],
-        'antarctica': [-80.0, 0.0],
-        'svalbard': [78.0, 15.0],
-        'lake_baikal': [53.5, 108.0],
-        'siberian_tundra': [66.0, 100.0],
-        'pacific_ocean': [0.0, -150.0],
-        'atlantic_ocean': [0.0, -30.0],
-        'indian_ocean': [-20.0, 80.0],
-        'southern_ocean': [-60.0, 0.0],
-        'coastal_demo': [37.7, -122.4],
-      };
+      final Map<String, List<double>> coords = _packCoordinates;
 
       for (var p in _packs) {
         if (coords.containsKey(p.id)) {
@@ -1745,43 +1747,38 @@ class WhamiRepository extends ChangeNotifier {
   /// Set the active region pack and load its GeoJSON data from storage
   Future<void> activateRegionPack(String packId) async {
     final index = _packs.indexWhere((p) => p.id == packId);
-    if (index == -1 || _packs[index].status != 'downloaded') return;
+    if (index == -1) return;
 
     _activePackId = packId;
 
-    try {
-      _loadedLandmarks = await _storage.loadGeoJson(
-        packId,
-        'landmarks.geojson',
-      );
-      _loadedMagnetic = await _storage.loadGeoJson(packId, 'magnetic.geojson');
-      _loadedSeamap = await _storage.loadGeoJson(packId, 'seamap.geojson');
-
-      // Get pack center to focus map
-      final manifest = await _storage.getPackManifest(packId);
-      if (manifest != null) {
-        final double centerLat =
-            manifest['center_latitude'] as double? ?? 37.8087;
-        final double centerLng =
-            manifest['center_longitude'] as double? ?? -122.4098;
-        centerMapOn(centerLat, centerLng);
-      }
-
-      _eventLog.addEvent(
-        title: 'Region Activated',
-        description: 'Loaded ${packs[index].name} datasets locally.',
-        severity: 'info',
-        iconName: 'map',
-      );
-    } catch (e) {
-      debugPrint('Error activating region pack $packId: $e');
-      _eventLog.addEvent(
-        title: 'Activation Failed',
-        description: 'Failed to load pack GeoJSON layers.',
-        severity: 'critical',
-        iconName: 'error_outline',
-      );
+    // Center map on the pack's region immediately
+    if (_packCoordinates.containsKey(packId)) {
+      centerMapOn(_packCoordinates[packId]![0], _packCoordinates[packId]![1]);
     }
+
+    _eventLog.addEvent(
+      title: 'Region Activated',
+      description: 'Pack "${_packs[index].name}" is now the active region.',
+      severity: 'info',
+      iconName: 'map',
+    );
+
+    notifyListeners();
+  }
+
+  /// Unload the currently active region pack
+  void deactivateRegionPack() {
+    _activePackId = '';
+    _loadedLandmarks = null;
+    _loadedMagnetic = null;
+    _loadedSeamap = null;
+
+    _eventLog.addEvent(
+      title: 'Region Deactivated',
+      description: 'Pack unloaded from local view.',
+      severity: 'info',
+      iconName: 'map',
+    );
 
     notifyListeners();
   }

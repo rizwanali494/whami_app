@@ -293,7 +293,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
             },
             initialCameraPosition: CameraPosition(
               target: centerCoords,
-              zoom: 12.5,
+              zoom: 8,
             ),
 
             onMapCreated: _onMapCreated,
