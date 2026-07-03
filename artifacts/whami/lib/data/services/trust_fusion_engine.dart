@@ -70,27 +70,32 @@ class TrustFusionEngine {
         if (distFromLastTrusted > 1000 && gps.speed < 50) {
           status = 'unstable';
           desc = 'GPS coordinate jump detected! Potential spoofing.';
-          alertMessage = 'WARNING: Unexpected GPS jump detected. Cross-checking sensor indices.';
+          alertMessage =
+              'WARNING: Unexpected GPS jump detected. Cross-checking sensor indices.';
           alertSeverity = 'warning';
         }
       }
 
-      opinions.add(PositionOpinion.fromGps(
-        latitude: gps.latitude,
-        longitude: gps.longitude,
-        accuracy: gps.accuracy,
-        status: status,
-        description: desc,
-      ));
+      opinions.add(
+        PositionOpinion.fromGps(
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          accuracy: gps.accuracy,
+          status: status,
+          description: desc,
+        ),
+      );
     } else {
-      opinions.add(PositionOpinion.unavailable(
-        id: 'gps',
-        name: 'GPS / GNSS',
-        shortCode: 'G',
-        sourceType: 'gps',
-        colorName: 'blue',
-        description: 'Waiting for satellite signals',
-      ));
+      opinions.add(
+        PositionOpinion.unavailable(
+          id: 'gps',
+          name: 'GPS / GNSS',
+          shortCode: 'G',
+          sourceType: 'gps',
+          colorName: 'blue',
+          description: 'Waiting for satellite signals',
+        ),
+      );
     }
 
     // ── 2. Landmark Matching Opinion ─────────────────────────────────────────
@@ -100,61 +105,112 @@ class TrustFusionEngine {
       // For this engine, we project the landmark opinion. If user is close,
       // the landmark opinion is at the nearest landmark location, with a small uncertainty radius.
       final confidenceScore = (landmarkMatch.confidence * 100).toInt();
-      final double estimatedUncertainty = landmarkMatch.distance.clamp(10.0, 150.0);
+      final double estimatedUncertainty = landmarkMatch.distance.clamp(
+        10.0,
+        150.0,
+      );
 
-      opinions.add(PositionOpinion.fromLandmark(
-        latitude: gps.latitude + ((Random().nextDouble() - 0.5) * 0.0001), // Jitter near GPS
-        longitude: gps.longitude + ((Random().nextDouble() - 0.5) * 0.0001),
-        confidence: confidenceScore,
-        uncertaintyRadius: estimatedUncertainty,
-        status: 'active',
-        description: 'Nearest matched landmark: ${landmarkMatch.name}',
-      ));
+      opinions.add(
+        PositionOpinion.fromLandmark(
+          latitude:
+              gps.latitude +
+              ((Random().nextDouble() - 0.5) * 0.0001), // Jitter near GPS
+          longitude: gps.longitude + ((Random().nextDouble() - 0.5) * 0.0001),
+          confidence: confidenceScore,
+          uncertaintyRadius: estimatedUncertainty,
+          status: 'active',
+          description: 'Nearest matched landmark: ${landmarkMatch.name}',
+        ),
+      );
     } else {
-      opinions.add(PositionOpinion.unavailable(
-        id: 'landmark',
-        name: 'Landmark / Seamap',
-        shortCode: 'L',
-        sourceType: 'landmark',
-        colorName: 'black',
-        description: hasOfflineData ? 'No landmarks identified in range' : 'No region pack active',
-      ));
+      opinions.add(
+        PositionOpinion.unavailable(
+          id: 'landmark',
+          name: 'Landmark / Seamap',
+          shortCode: 'L',
+          sourceType: 'landmark',
+          colorName: 'black',
+          description: hasOfflineData
+              ? 'No landmarks identified in range'
+              : 'No region pack active',
+        ),
+      );
     }
 
     // ── 3. Magnetic Grid Opinion ─────────────────────────────────────────────
-    if (hasOfflineData && magneticMatch != null && magnetometer != null && gps != null) {
-      // Cross check expected field vs live readings
-      final isInterfered = magneticMatch.deviation > 8.0; // deviation > 8 µT is heavy interference
+    if (hasOfflineData &&
+        magneticMatch != null &&
+        magnetometer != null &&
+        gps != null) {
+      // Full cross-check: expected field vs live readings
+      final isInterfered =
+          magneticMatch.deviation >
+          8.0; // deviation > 8 µT is heavy interference
       final status = isInterfered ? 'unstable' : 'active';
       final confidenceScore = isInterfered
           ? 20
           : (magneticMatch.stability * 95).toInt();
-      
-      String desc = 'Field deviation: ${magneticMatch.deviation.toStringAsFixed(1)} µT';
+
+      String desc =
+          'Field deviation: ${magneticMatch.deviation.toStringAsFixed(1)} µT';
       if (isInterfered) {
         desc += ' (Interference detected!)';
-        alertMessage = 'ALERT: Geomagnetic anomalies detected. Metallic interference possible.';
+        alertMessage =
+            'ALERT: Geomagnetic anomalies detected. Metallic interference possible.';
         alertSeverity = 'info';
       }
 
       // Magnetic lookup gives position validation
-      opinions.add(PositionOpinion.fromMagnetic(
-        latitude: gps.latitude,
-        longitude: gps.longitude,
-        confidence: confidenceScore,
-        uncertaintyRadius: isInterfered ? 500.0 : 150.0,
-        status: status,
-        description: desc,
-      ));
+      opinions.add(
+        PositionOpinion.fromMagnetic(
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          confidence: confidenceScore,
+          uncertaintyRadius: isInterfered ? 500.0 : 150.0,
+          status: status,
+          description: desc,
+        ),
+      );
+    } else if (magnetometer != null) {
+      // Live hardware reading available but no offline cross-check data.
+      // Still show the sensor as active with raw field readings.
+      final strength = magnetometer.fieldStrength;
+      final heading = magnetometer.heading;
+
+      // Derive a basic confidence from field stability (no baseline cross-check)
+      int rawConfidence;
+      if (strength > 20 && strength < 65) {
+        rawConfidence = 72; // Typical Earth field range → reasonable
+      } else if (strength > 10 && strength < 100) {
+        rawConfidence = 50; // Slightly outside norm
+      } else {
+        rawConfidence = 25; // Unusual reading
+      }
+
+      opinions.add(
+        PositionOpinion.fromMagnetic(
+          latitude: gps?.latitude ?? 0,
+          longitude: gps?.longitude ?? 0,
+          confidence: rawConfidence,
+          uncertaintyRadius: 300.0,
+          status: 'active',
+          description:
+              'Live: ${heading.toStringAsFixed(0)}° heading, '
+              '${strength.toStringAsFixed(1)} µT'
+              '${!hasOfflineData ? ' (no pack for cross-check)' : ''}',
+        ),
+      );
     } else {
-      opinions.add(PositionOpinion.unavailable(
-        id: 'magnetic',
-        name: 'Magnetic Field',
-        shortCode: 'M',
-        sourceType: 'magnetic',
-        colorName: 'red',
-        description: hasOfflineData ? 'Magnetometer reading waiting' : 'No region pack active',
-      ));
+      opinions.add(
+        PositionOpinion.unavailable(
+          id: 'magnetic',
+          name: 'Magnetic Field',
+          shortCode: 'M',
+          sourceType: 'magnetic',
+          colorName: 'red',
+          description: 'No magnetometer signal',
+        ),
+      );
     }
 
     // ── 4. IMU Dead-Reckoning Opinion ────────────────────────────────────────
@@ -163,52 +219,74 @@ class TrustFusionEngine {
       // 1 degree latitude ~ 111,000 meters. 1 degree longitude ~ 111,000 * cos(lat) meters.
       final latRad = lastTrustedLat * pi / 180;
       final newLat = lastTrustedLat + (imu.displacementY / 111000.0);
-      final newLng = lastTrustedLng + (imu.displacementX / (111000.0 * cos(latRad)));
+      final newLng =
+          lastTrustedLng + (imu.displacementX / (111000.0 * cos(latRad)));
 
       // Confidence slowly decays as displacement grows to represent drift
-      final driftDistance = sqrt(imu.displacementX * imu.displacementX + imu.displacementY * imu.displacementY);
-      final double uncertainty = (30.0 + (driftDistance * 0.1)).clamp(30.0, 1000.0);
-      final confidenceScore = (85 - (driftDistance * 0.05).toInt()).clamp(10, 90);
+      final driftDistance = sqrt(
+        imu.displacementX * imu.displacementX +
+            imu.displacementY * imu.displacementY,
+      );
+      final double uncertainty = (30.0 + (driftDistance * 0.1)).clamp(
+        30.0,
+        1000.0,
+      );
+      final confidenceScore = (85 - (driftDistance * 0.05).toInt()).clamp(
+        10,
+        90,
+      );
 
-      opinions.add(PositionOpinion.fromImu(
-        latitude: newLat,
-        longitude: newLng,
-        confidence: confidenceScore,
-        uncertaintyRadius: uncertainty,
-        status: 'active',
-        description: 'Dead reckoning. Drift: ${driftDistance.toStringAsFixed(0)}m',
-      ));
+      opinions.add(
+        PositionOpinion.fromImu(
+          latitude: newLat,
+          longitude: newLng,
+          confidence: confidenceScore,
+          uncertaintyRadius: uncertainty,
+          status: 'active',
+          description:
+              'Dead reckoning. Drift: ${driftDistance.toStringAsFixed(0)}m',
+        ),
+      );
     } else {
-      opinions.add(PositionOpinion.unavailable(
-        id: 'imu',
-        name: 'IMU Movement',
-        shortCode: 'I',
-        sourceType: 'imu',
-        colorName: 'purple',
-        description: 'IMU tracking inactive',
-      ));
+      opinions.add(
+        PositionOpinion.unavailable(
+          id: 'imu',
+          name: 'IMU Movement',
+          shortCode: 'I',
+          sourceType: 'imu',
+          colorName: 'purple',
+          description: 'IMU tracking inactive',
+        ),
+      );
     }
 
     // ── 5. Celestial Alignment Opinion ───────────────────────────────────────
     if (sky != null && gps != null) {
       // Sky calculation provides coarse offline verification
-      opinions.add(PositionOpinion.fromSky(
-        latitude: gps.latitude + ((Random().nextDouble() - 0.5) * 0.003), // Coarse scale jitter
-        longitude: gps.longitude + ((Random().nextDouble() - 0.5) * 0.003),
-        confidence: sky.confidence,
-        uncertaintyRadius: 800.0,
-        status: 'active',
-        description: 'Celestial azimuth alignment: Sun ${sky.sunAzimuth.toStringAsFixed(0)}°',
-      ));
+      opinions.add(
+        PositionOpinion.fromSky(
+          latitude:
+              gps.latitude +
+              ((Random().nextDouble() - 0.5) * 0.003), // Coarse scale jitter
+          longitude: gps.longitude + ((Random().nextDouble() - 0.5) * 0.003),
+          confidence: sky.confidence,
+          uncertaintyRadius: 800.0,
+          status: 'active',
+          description:
+              'Celestial azimuth alignment: Sun ${sky.sunAzimuth.toStringAsFixed(0)}°',
+        ),
+      );
     } else {
-      opinions.add(PositionOpinion.unavailable(
-        id: 'sextant',
-        name: 'Sextant / Sky',
-        shortCode: 'S',
-        sourceType: 'sextant',
-        colorName: 'green',
-        description: 'Celestial calculations inactive',
-      ));
+      opinions.add(
+        PositionOpinion.unavailable(
+          id: 'sextant',
+          name: 'Sextant / Sky',
+          shortCode: 'S',
+          sourceType: 'sextant',
+          colorName: 'green',
+          description: 'Celestial calculations inactive',
+        ),
+      );
     }
 
     // ── 6. Run Fusion Weighted Calculation ───────────────────────────────────
@@ -218,14 +296,16 @@ class TrustFusionEngine {
     int compositeConfidence = 0;
     double compositeUncertainty = 0.0;
 
-    final activeOpinions = opinions.where((op) => op.status == 'active' && op.confidence > 0).toList();
+    final activeOpinions = opinions
+        .where((op) => op.status == 'active' && op.confidence > 0)
+        .toList();
 
     if (activeOpinions.isNotEmpty) {
       for (final op in activeOpinions) {
         // Weight based on confidence / (uncertainty radius)^2
         final radius = op.uncertaintyRadius.clamp(1.0, 10000.0);
         final weight = op.confidence / (radius * radius);
-        
+
         sumLat += op.latitude * weight;
         sumLng += op.longitude * weight;
         sumWeight += weight;
@@ -239,12 +319,18 @@ class TrustFusionEngine {
         fusedLng = sumLng / sumWeight;
       } else {
         // Simple average fallback
-        fusedLat = activeOpinions.map((o) => o.latitude).reduce((a, b) => a + b) / activeOpinions.length;
-        fusedLng = activeOpinions.map((o) => o.longitude).reduce((a, b) => a + b) / activeOpinions.length;
+        fusedLat =
+            activeOpinions.map((o) => o.latitude).reduce((a, b) => a + b) /
+            activeOpinions.length;
+        fusedLng =
+            activeOpinions.map((o) => o.longitude).reduce((a, b) => a + b) /
+            activeOpinions.length;
       }
 
       // Calculate composite confidence (average of active opinions, boosted if multiple sources agree)
-      final avgConf = activeOpinions.map((o) => o.confidence).reduce((a, b) => a + b) / activeOpinions.length;
+      final avgConf =
+          activeOpinions.map((o) => o.confidence).reduce((a, b) => a + b) /
+          activeOpinions.length;
       int agreementBonus = 0;
       if (activeOpinions.length >= 3) {
         agreementBonus = 8; // Agreement boost
@@ -257,7 +343,10 @@ class TrustFusionEngine {
         final radius = op.uncertaintyRadius.clamp(1.0, 10000.0);
         invSumRadiusSquared += 1.0 / (radius * radius);
       }
-      compositeUncertainty = (1.0 / sqrt(invSumRadiusSquared)).clamp(5.0, 1000.0);
+      compositeUncertainty = (1.0 / sqrt(invSumRadiusSquared)).clamp(
+        5.0,
+        1000.0,
+      );
 
       // Check for discrepancies between GPS and other sources
       final gpsOpinion = opinions.firstWhere((o) => o.id == 'gps');
@@ -265,13 +354,19 @@ class TrustFusionEngine {
         double maxDiscrepancy = 0;
         for (final op in activeOpinions) {
           if (op.id == 'gps') continue;
-          final dist = _haversine(gpsOpinion.latitude, gpsOpinion.longitude, op.latitude, op.longitude);
+          final dist = _haversine(
+            gpsOpinion.latitude,
+            gpsOpinion.longitude,
+            op.latitude,
+            op.longitude,
+          );
           if (dist > maxDiscrepancy) maxDiscrepancy = dist;
         }
 
         // If GPS is > 500m away from other active sources, trigger critical spoofing alert!
         if (maxDiscrepancy > 500.0) {
-          alertMessage = 'CRITICAL: Position discrepancy! GPS differs from offline landmarks by ${maxDiscrepancy.toStringAsFixed(0)}m.';
+          alertMessage =
+              'CRITICAL: Position discrepancy! GPS differs from offline landmarks by ${maxDiscrepancy.toStringAsFixed(0)}m.';
           alertSeverity = 'critical';
           // Deprecate trust score
           compositeConfidence = (compositeConfidence * 0.4).toInt();
@@ -309,8 +404,12 @@ class TrustFusionEngine {
     const r = 6371000.0;
     final dLat = (lat2 - lat1) * pi / 180;
     final dLon = (lon2 - lon1) * pi / 180;
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180) * cos(lat2 * pi / 180) * sin(dLon / 2) * sin(dLon / 2);
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) *
+            cos(lat2 * pi / 180) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return r * c;
   }

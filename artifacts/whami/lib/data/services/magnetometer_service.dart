@@ -68,18 +68,22 @@ class MagnetometerService {
       );
 
       // Timeout after 2 seconds
-      final available = await completer.future
-          .timeout(const Duration(seconds: 2), onTimeout: () {
-        testSub?.cancel();
-        return false;
-      });
+      final available = await completer.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          testSub?.cancel();
+          return false;
+        },
+      );
 
       _isAvailable = available;
       _statusMessage = available ? 'Magnetometer ready' : 'Not available';
+      debugPrint('[Magnetometer] initialize() → available=$available');
       return available;
     } catch (e) {
       _statusMessage = 'Magnetometer init failed: $e';
       _isAvailable = false;
+      debugPrint('[Magnetometer] initialize() FAILED: $e');
       return false;
     }
   }
@@ -88,46 +92,60 @@ class MagnetometerService {
   void startListening() {
     if (!_isAvailable) return;
 
-    _subscription = magnetometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 200),
-    ).listen(
-      (event) {
-        final fieldStrength = sqrt(
-          event.x * event.x + event.y * event.y + event.z * event.z,
+    _subscription =
+        magnetometerEventStream(
+          samplingPeriod: const Duration(milliseconds: 200),
+        ).listen(
+          (event) {
+            final fieldStrength = sqrt(
+              event.x * event.x + event.y * event.y + event.z * event.z,
+            );
+
+            // Compute heading from x,y
+            var heading = atan2(event.y, event.x) * 180 / pi;
+            if (heading < 0) heading += 360;
+
+            // Update baseline
+            _recentStrengths.add(fieldStrength);
+            if (_recentStrengths.length > _baselineWindowSize) {
+              _recentStrengths.removeAt(0);
+            }
+            if (_recentStrengths.length >= 5) {
+              _baselineStrength =
+                  _recentStrengths.reduce((a, b) => a + b) /
+                  _recentStrengths.length;
+            }
+
+            final reading = MagnetometerReading(
+              x: event.x,
+              y: event.y,
+              z: event.z,
+              heading: heading,
+              fieldStrength: fieldStrength,
+              timestamp: DateTime.now(),
+            );
+
+            _lastReading = reading;
+            _statusMessage = 'Field stable';
+
+            // // Log every magnetometer reading interval
+            // debugPrint(
+            //   '[Magnetometer] x=${event.x.toStringAsFixed(2)} '
+            //   'y=${event.y.toStringAsFixed(2)} '
+            //   'z=${event.z.toStringAsFixed(2)} | '
+            //   'heading=${heading.toStringAsFixed(1)}° | '
+            //   'strength=${fieldStrength.toStringAsFixed(2)} µT | '
+            //   'baseline=${_baselineStrength.toStringAsFixed(2)} µT | '
+            //   't=${reading.timestamp.toIso8601String()}',
+            // );
+
+            _controller.add(reading);
+          },
+          onError: (e) {
+            debugPrint('Magnetometer stream error: $e');
+            _statusMessage = 'Magnetometer error';
+          },
         );
-
-        // Compute heading from x,y
-        var heading = atan2(event.y, event.x) * 180 / pi;
-        if (heading < 0) heading += 360;
-
-        // Update baseline
-        _recentStrengths.add(fieldStrength);
-        if (_recentStrengths.length > _baselineWindowSize) {
-          _recentStrengths.removeAt(0);
-        }
-        if (_recentStrengths.length >= 5) {
-          _baselineStrength = _recentStrengths.reduce((a, b) => a + b) /
-              _recentStrengths.length;
-        }
-
-        final reading = MagnetometerReading(
-          x: event.x,
-          y: event.y,
-          z: event.z,
-          heading: heading,
-          fieldStrength: fieldStrength,
-          timestamp: DateTime.now(),
-        );
-
-        _lastReading = reading;
-        _statusMessage = 'Field stable';
-        _controller.add(reading);
-      },
-      onError: (e) {
-        debugPrint('Magnetometer stream error: $e');
-        _statusMessage = 'Magnetometer error';
-      },
-    );
   }
 
   /// Detect magnetic interference
@@ -136,7 +154,7 @@ class MagnetometerService {
     if (_lastReading == null || _baselineStrength == 0) return false;
     final deviation =
         (_lastReading!.fieldStrength - _baselineStrength).abs() /
-            _baselineStrength;
+        _baselineStrength;
     return deviation > 0.5; // 50% deviation from baseline
   }
 
@@ -148,7 +166,8 @@ class MagnetometerService {
 
     // Calculate variance
     final mean = _baselineStrength;
-    final variance = _recentStrengths
+    final variance =
+        _recentStrengths
             .map((s) => (s - mean) * (s - mean))
             .reduce((a, b) => a + b) /
         _recentStrengths.length;

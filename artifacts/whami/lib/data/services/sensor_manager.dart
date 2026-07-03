@@ -101,6 +101,40 @@ class SensorManager {
     });
   }
 
+  /// Start snapshot subscriptions for all sensors, assuming the magnetometer
+  /// is already streaming from boot. Skips calling magnetometerService.startListening()
+  /// but still wires the existing stream into the snapshot pipeline.
+  void startAllWithMagAlreadyRunning() {
+    // GPS, IMU, Barometer are started by the caller before this method.
+    // Just wire up the snapshot subscriptions.
+    _gpsSub?.cancel();
+    _magSub?.cancel();
+    _imuSub?.cancel();
+    _baroSub?.cancel();
+
+    _gpsSub = gpsService.stream.listen((reading) {
+      _lastGps = reading;
+      _updateCelestialCoords();
+      _emitSnapshot();
+    });
+
+    // Magnetometer is already streaming — just subscribe for snapshots
+    _magSub = magnetometerService.stream.listen((reading) {
+      _lastMag = reading;
+      _emitSnapshot();
+    });
+
+    _imuSub = imuService.stream.listen((reading) {
+      _lastImu = reading;
+      _emitSnapshot();
+    });
+
+    _baroSub = barometerService.stream.listen((reading) {
+      _lastBaro = reading;
+      _emitSnapshot();
+    });
+  }
+
   /// Stop all hardware subscription streams
   void stopAll() {
     _gpsSub?.cancel();
@@ -114,6 +148,23 @@ class SensorManager {
 
     gpsService.stopListening();
     magnetometerService.stopListening();
+    imuService.stopListening();
+    barometerService.stopListening();
+  }
+
+  /// Stop all sensor streams EXCEPT magnetometer (which runs persistently from boot)
+  void stopAllKeepMagnetometer() {
+    _gpsSub?.cancel();
+    _magSub?.cancel();
+    _imuSub?.cancel();
+    _baroSub?.cancel();
+    _gpsSub = null;
+    _magSub = null;
+    _imuSub = null;
+    _baroSub = null;
+
+    gpsService.stopListening();
+    // magnetometerService is NOT stopped — it keeps running
     imuService.stopListening();
     barometerService.stopListening();
   }
@@ -153,8 +204,10 @@ class SensorManager {
             : 'unavailable',
         confidence: gpsService.isAvailable
             ? (_lastGps != null
-                ? (_lastGps!.accuracy < 10 ? 98 : (_lastGps!.accuracy < 30 ? 80 : 50))
-                : 70)
+                  ? (_lastGps!.accuracy < 10
+                        ? 98
+                        : (_lastGps!.accuracy < 30 ? 80 : 50))
+                  : 70)
             : 0,
         latestValue: _lastGps != null
             ? '${_lastGps!.latitude.toStringAsFixed(4)}, ${_lastGps!.longitude.toStringAsFixed(4)} (±${_lastGps!.accuracy.toStringAsFixed(1)}m)'
@@ -210,7 +263,9 @@ class SensorManager {
         name: 'Landmark Scanner',
         status: cameraService.isAvailable ? 'available' : 'unavailable',
         confidence: cameraService.isAvailable ? 75 : 0,
-        latestValue: cameraService.isInitialized ? 'Live preview streaming' : 'Inactive',
+        latestValue: cameraService.isInitialized
+            ? 'Live preview streaming'
+            : 'Inactive',
         healthMessage: cameraService.statusMessage,
         iconName: 'camera_alt',
         lastUpdated: now,

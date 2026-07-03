@@ -32,7 +32,7 @@ class OfflineStyle {
           'type': 'raster',
           'source': 'open-tiles',
           'minzoom': 0,
-          'maxzoom': 18,
+          'maxzoom': 14,
         },
       ],
     };

@@ -9,6 +9,7 @@ import '../models/region_pack.dart';
 import '../models/trust_event.dart';
 import '../models/landmark.dart';
 import '../services/sensor_manager.dart';
+import '../services/magnetometer_service.dart';
 import '../services/region_pack_storage.dart';
 import '../services/region_pack_downloader.dart';
 import '../services/position_matcher.dart';
@@ -108,6 +109,10 @@ class WhamiRepository extends ChangeNotifier {
   // Stream Subscriptions
   StreamSubscription? _sensorSub;
   StreamSubscription<DownloadProgress>? _downloadSub;
+
+  // Persistent magnetometer background feed (runs from app launch, independent of tracking)
+  StreamSubscription? _magFeedSub;
+  MagnetometerReading? _lastMagReading;
 
   // Map center overrides (optional)
   double? mapCenterLat;
@@ -1783,13 +1788,47 @@ class WhamiRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Start a persistent background magnetometer feed from the hardware.
+  /// Called once from main.dart at app launch. Runs independently of tracking.
+  void startMagnetometerFeed() {
+    final magService = _sensors.magnetometerService;
+    if (!magService.isAvailable) {
+      debugPrint(
+        '[MagFeed] Magnetometer not available, skipping background feed',
+      );
+      return;
+    }
+
+    _magFeedSub?.cancel();
+    _magFeedSub = magService.stream.listen((reading) {
+      _lastMagReading = reading;
+      // debugPrint(
+      //   '[MagFeed] Live reading: '
+      //   'heading=${reading.heading.toStringAsFixed(1)}° '
+      //   'strength=${reading.fieldStrength.toStringAsFixed(2)} µT '
+      //   'confidence=${magService.getConfidence()}%',
+      // );
+      // If NOT in full tracking mode, update UI with live mag data
+      if (!_isTracking) {
+        notifyListeners();
+      }
+    });
+
+    // debugPrint('[MagFeed] Background magnetometer feed started');
+  }
+
   /// Enable or disable tracking and start/stop the hardware streams
   void toggleTracking() {
     _isTracking = !_isTracking;
     if (_isTracking) {
       _trail.clear();
       _sensors.imuService.resetDeadReckoning();
-      _sensors.startAll();
+      // Start all sensors EXCEPT magnetometer (already running from boot)
+      _sensors.gpsService.startListening();
+      _sensors.imuService.startListening();
+      _sensors.barometerService.startListening();
+      // Re-wire the magnetometer into the sensor manager's snapshot stream
+      _sensors.startAllWithMagAlreadyRunning();
 
       _sensorSub = _sensors.snapshotStream.listen((snapshot) {
         _processSnapshot(snapshot);
@@ -1804,11 +1843,12 @@ class WhamiRepository extends ChangeNotifier {
     } else {
       _sensorSub?.cancel();
       _sensorSub = null;
-      _sensors.stopAll();
+      // Stop other sensors but keep magnetometer running
+      _sensors.stopAllKeepMagnetometer();
 
       _eventLog.addEvent(
         title: 'Tracking Stopped',
-        description: 'Sensor streams closed.',
+        description: 'Sensor streams closed. Magnetometer still active.',
         severity: 'info',
         iconName: 'stop',
       );
@@ -1964,7 +2004,12 @@ class WhamiRepository extends ChangeNotifier {
 
   List<PositionOpinion> getPositionOpinions() {
     if (_opinions.isEmpty) {
-      // Build dummy loading opinions before tracking starts
+      // Build pre-tracking opinions — magnetic uses live hardware when available
+      final magService = _sensors.magnetometerService;
+      final magReading = _lastMagReading;
+      final magConfidence = magService.getConfidence();
+      final hasMagSignal = magReading != null && magService.isAvailable;
+
       return [
         PositionOpinion.unavailable(
           id: 'gps',
@@ -1980,13 +2025,29 @@ class WhamiRepository extends ChangeNotifier {
           sourceType: 'landmark',
           colorName: 'black',
         ),
-        PositionOpinion.unavailable(
-          id: 'magnetic',
-          name: 'Magnetic Field',
-          shortCode: 'M',
-          sourceType: 'magnetic',
-          colorName: 'red',
-        ),
+        if (hasMagSignal)
+          PositionOpinion.fromMagnetic(
+            latitude: 0,
+            longitude: 0,
+            confidence: magConfidence,
+            uncertaintyRadius: magService.detectInterference() ? 500.0 : 150.0,
+            status: magService.detectInterference() ? 'unstable' : 'active',
+            description:
+                'Live: ${magReading.heading.toStringAsFixed(0)}° heading, '
+                '${magReading.fieldStrength.toStringAsFixed(1)} µT '
+                '(confidence: $magConfidence%)',
+          )
+        else
+          PositionOpinion.unavailable(
+            id: 'magnetic',
+            name: 'Magnetic Field',
+            shortCode: 'M',
+            sourceType: 'magnetic',
+            colorName: 'red',
+            description: magService.isAvailable
+                ? 'Waiting for first reading...'
+                : 'Magnetometer not available on this device',
+          ),
       ];
     }
     return _opinions;
@@ -2072,6 +2133,7 @@ class WhamiRepository extends ChangeNotifier {
     _connectivitySub?.cancel();
     _sensorSub?.cancel();
     _downloadSub?.cancel();
+    _magFeedSub?.cancel();
     super.dispose();
   }
 }
