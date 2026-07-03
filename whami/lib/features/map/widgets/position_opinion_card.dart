@@ -73,7 +73,9 @@ class PositionOpinionCard extends StatelessWidget {
                     if (isUnstable)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.alertWarning,
                           borderRadius: BorderRadius.circular(4),
@@ -90,7 +92,9 @@ class PositionOpinionCard extends StatelessWidget {
                     if (isUnavailable)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFEEEEEE),
                           borderRadius: BorderRadius.circular(4),
