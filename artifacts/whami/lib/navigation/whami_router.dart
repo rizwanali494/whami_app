@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../data/repositories/whami_repository.dart';
+import '../data/repositories/region_repository.dart';
+import '../data/repositories/landmark_repository.dart';
+import '../data/repositories/map_repository.dart';
 import '../data/services/gps_service.dart';
 import '../data/services/magnetometer_service.dart';
 import '../data/services/imu_service.dart';
@@ -11,7 +14,10 @@ import '../data/services/camera_service.dart';
 import '../data/services/sky_service.dart';
 import '../data/services/sensor_manager.dart';
 import '../data/services/region_pack_storage.dart';
-import '../data/services/region_pack_downloader.dart';
+import '../data/services/download_engine.dart';
+import '../data/services/region_engine.dart';
+import '../data/services/landmark_database.dart';
+import '../data/services/landmark_engine.dart';
 import '../data/services/position_matcher.dart';
 import '../data/services/trust_fusion_engine.dart';
 import '../data/services/trust_event_log.dart';
@@ -42,18 +48,27 @@ final sensorManager = SensorManager(
 );
 
 final storage = RegionPackStorage();
-final downloader = RegionPackDownloader(storage: storage);
+final downloadEngine = DownloadEngine(storage: storage);
+final landmarkDatabase = LandmarkDatabase();
+final regionEngine = RegionEngine(storage: storage, landmarkDatabase: landmarkDatabase);
+final landmarkEngine = LandmarkEngine(regionEngine: regionEngine, db: landmarkDatabase);
+
+final regionRepo = RegionRepository(regionEngine: regionEngine, downloadEngine: downloadEngine);
+final landmarkRepo = LandmarkRepository(landmarkEngine: landmarkEngine);
+final mapRepo = MapRepository();
+
 final matcher = PositionMatcher();
 final fusionEngine = TrustFusionEngine();
 final eventLog = TrustEventLog();
 
 final whamiRepo = WhamiRepository(
   sensors: sensorManager,
-  storage: storage,
-  downloader: downloader,
   matcher: matcher,
   fusionEngine: fusionEngine,
   eventLog: eventLog,
+  regionRepository: regionRepo,
+  landmarkRepository: landmarkRepo,
+  mapRepository: mapRepo,
 );
 
 final whamiRouter = GoRouter(

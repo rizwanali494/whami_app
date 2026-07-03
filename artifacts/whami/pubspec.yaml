@@ -41,6 +41,15 @@ dependencies:
   # State management
   provider: ^6.1.0
 
+  # SQLite local database
+  sqflite: ^2.4.2
+
+  # Cryptographic hashes for checksums
+  crypto: ^3.0.6
+
+  # Archive handling for extraction
+  archive: ^4.0.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

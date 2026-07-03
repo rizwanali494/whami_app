@@ -6,6 +6,7 @@ import 'widgets/whami_map_view.dart';
 import 'widgets/trust_badge.dart';
 import 'widgets/position_opinion_card.dart';
 import 'widgets/map_layer_control.dart';
+import 'widgets/map_legend_row.dart';
 
 class MapScreen extends StatefulWidget {
   final WhamiRepository repository;

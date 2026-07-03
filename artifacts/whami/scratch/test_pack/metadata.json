@@ -1,0 +1,24 @@
+{
+  "id": "pakistan_punjab",
+  "name": "Punjab",
+  "country": "Pakistan",
+  "version": "1.0.2",
+  "downloadUrl": "https://cdn.whami.com/packs/pakistan_punjab.whami",
+  "checksum": "mock_checksum",
+  "size": 184597000,
+  "minAppVersion": "2.0.0",
+  "schemaVersion": "1.0.0",
+  "previewImage": "https://cdn.whami.com/previews/punjab.jpg",
+  "bounds": [73.5, 29.5, 75.0, 31.0],
+  "categories": [
+    "hiking",
+    "marine"
+  ],
+  "supportsAR": true,
+  "supportsMagnetic": true,
+  "supportsTerrain": true,
+  "languages": [
+    "en",
+    "ur"
+  ]
+}
