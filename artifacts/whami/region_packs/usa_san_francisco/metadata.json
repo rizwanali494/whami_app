@@ -1,0 +1,17 @@
+{
+    "id": "usa_san_francisco",
+    "name": "San Francisco",
+    "country": "United States",
+    "version": "1.0.0",
+    "description": "Offline map and landmarks for San Francisco",
+    "bounds": {
+        "minLat": 37.63983,
+        "minLon": -123.173825,
+        "maxLat": 37.929824,
+        "maxLon": -122.28178
+    },
+    "mapFile": "map.mbtiles",
+    "landmarkFile": "landmarks.sqlite",
+    "createdAt": "2026-07-03T00:00:00Z",
+    "schemaVersion": 1
+}

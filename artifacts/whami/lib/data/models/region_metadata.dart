@@ -50,6 +50,11 @@ class RegionMetadata {
   final int sizeBytes;
   final String packType;
   final int trustScore;
+  final String? mapFile;
+  final String? landmarkFile;
+  final String? description;
+  final String? createdAt;
+  final int schemaVersion;
 
   const RegionMetadata({
     required this.id,
@@ -61,11 +66,26 @@ class RegionMetadata {
     required this.sizeBytes,
     required this.packType,
     required this.trustScore,
+    this.mapFile,
+    this.landmarkFile,
+    this.description,
+    this.createdAt,
+    this.schemaVersion = 1,
   });
 
   factory RegionMetadata.fromJson(Map<String, dynamic> json) {
-    final boundsRaw = json['bounds'] as List<dynamic>? ?? [0.0, 0.0, 0.0, 0.0];
-    final boundsList = boundsRaw.map((e) => (e as num).toDouble()).toList();
+    List<double> boundsList = [0.0, 0.0, 0.0, 0.0];
+    if (json['bounds'] is List) {
+      boundsList = (json['bounds'] as List).map((e) => (e as num).toDouble()).toList();
+    } else if (json['bounds'] is Map) {
+      final b = json['bounds'] as Map<String, dynamic>;
+      boundsList = [
+        (b['minLat'] as num?)?.toDouble() ?? 0.0,
+        (b['minLon'] as num? ?? b['minLng'] as num?)?.toDouble() ?? 0.0,
+        (b['maxLat'] as num?)?.toDouble() ?? 0.0,
+        (b['maxLon'] as num? ?? b['maxLng'] as num?)?.toDouble() ?? 0.0,
+      ];
+    }
 
     return RegionMetadata(
       id: json['id'] as String,
@@ -77,6 +97,11 @@ class RegionMetadata {
       sizeBytes: json['size'] as int? ?? 0,
       packType: json['packType'] as String? ?? json['type'] as String? ?? 'Unknown',
       trustScore: json['trustScore'] as int? ?? 0,
+      mapFile: json['mapFile'] as String?,
+      landmarkFile: json['landmarkFile'] as String?,
+      description: json['description'] as String?,
+      createdAt: json['createdAt'] as String?,
+      schemaVersion: json['schemaVersion'] is int ? json['schemaVersion'] as int : (int.tryParse(json['schemaVersion']?.toString() ?? '1') ?? 1),
     );
   }
 
@@ -91,6 +116,11 @@ class RegionMetadata {
       'size': sizeBytes,
       'packType': packType,
       'trustScore': trustScore,
+      if (mapFile != null) 'mapFile': mapFile,
+      if (landmarkFile != null) 'landmarkFile': landmarkFile,
+      if (description != null) 'description': description,
+      if (createdAt != null) 'createdAt': createdAt,
+      'schemaVersion': schemaVersion,
     };
   }
 

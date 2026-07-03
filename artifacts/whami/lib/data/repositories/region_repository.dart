@@ -24,79 +24,15 @@ class RegionRepository extends ChangeNotifier {
 
   /// Initialize region pack list and cross-check filesystem status
   Future<void> _initCatalog() async {
-    // 50+ Global regions catalog (copied from WhamiRepository baseline for legacy UI rendering)
-    final defaultPacks = [
-      RegionPack(
-        id: 'sf_bay',
-        name: 'SF Bay Harbor Pack',
-        type: 'Marine',
-        size: '142 MB',
-        status: 'available',
-        location: 'San Francisco Bay, CA, USA',
-        lastUpdated: 'Jun 10, 2026',
-        includedData: const ['Land maps', 'Marine data', 'Landmarks (847)', 'Magnetic baseline'],
-        trustScore: 94,
-      ),
-      RegionPack(
-        id: 'tahoe',
-        name: 'Lake Tahoe Pack',
-        type: 'Lake',
-        size: '88 MB',
-        status: 'available',
-        location: 'Lake Tahoe, CA/NV, USA',
-        lastUpdated: 'May 28, 2026',
-        includedData: const ['Land maps', 'Lake data', 'Landmarks (312)', 'Magnetic baseline'],
-        trustScore: 89,
-      ),
-      RegionPack(
-        id: 'mountain_view',
-        name: 'Santa Cruz Mountains Hiking Pack',
-        type: 'Hiking',
-        size: '64 MB',
-        status: 'available',
-        location: 'Santa Cruz Mountains, CA, USA',
-        lastUpdated: 'Mar 15, 2026',
-        includedData: const ['Land maps', 'Trail data', 'Landmarks (198)', 'Magnetic baseline'],
-        trustScore: 76,
-      ),
-      RegionPack(
-        id: 'rotterdam',
-        name: 'Rotterdam Harbor Pack',
-        type: 'Marine',
-        size: '210 MB',
-        status: 'available',
-        location: 'Port of Rotterdam, Netherlands',
-        lastUpdated: 'Jun 1, 2026',
-        includedData: const ['Land maps', 'Marine data', 'Landmarks (1204)', 'Magnetic baseline'],
-        trustScore: 97,
-      ),
-      RegionPack(
-        id: 'coastal_demo',
-        name: 'Coastal Emergency Demo Pack',
-        type: 'Urban',
-        size: '38 MB',
-        status: 'available',
-        location: 'Demo — Coastal Area',
-        lastUpdated: 'Jun 14, 2026',
-        includedData: const ['Land maps', 'Coastal data', 'Landmarks (56)', 'Magnetic baseline'],
-        trustScore: 82,
-      ),
-    ];
+    // 1. Discover and extract bundled assets if this is the first launch
+    await regionEngine.storage.discoverBundledPacks();
+
+    // 2. Scan the local documents directory for installed packs
+    final discoveredPacks = await regionEngine.storage.scanInstalledPacks();
 
     _packs.clear();
-    _packs.addAll(defaultPacks);
+    _packs.addAll(discoveredPacks);
 
-    // Sync downloaded statuses on load
-    for (int i = 0; i < _packs.length; i++) {
-      final isDownloaded = await regionEngine.storage.isPackDownloaded(_packs[i].id);
-      if (isDownloaded) {
-        final meta = await regionEngine.storage.getPackMetadata(_packs[i].id);
-        _packs[i] = _packs[i].copyWith(
-          status: 'downloaded',
-          metadata: meta,
-        );
-      }
-    }
     notifyListeners();
   }
 

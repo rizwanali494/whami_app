@@ -57,3 +57,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - region_packs/pakistan_lahore/
+    - region_packs/usa_san_francisco/

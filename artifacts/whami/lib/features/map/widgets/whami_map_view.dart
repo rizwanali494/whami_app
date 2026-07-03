@@ -67,8 +67,53 @@ class _WhamiMapViewState extends State<WhamiMapView>
         _mapEngine.camera.centerOn(pos.latitude, pos.longitude, zoom: 12.5);
       }
     }
+  }
 
+  void _onStyleLoaded() async {
+    if (!mounted) return;
     await _loadPackLayers();
+  }
+
+  void _onActivePackChanged() async {
+    if (_controller == null) return;
+
+    final packId = widget.repository.activePackId;
+    final isOffline = widget.repository.connectivityMode == ConnectivityMode.offline;
+
+    if (packId.isEmpty) {
+      setState(() {
+        _packLoaded = false;
+      });
+      await _mapEngine.layer.clearLayers();
+      final styleJson = _mapEngine.tile.generateStyle(
+        isOffline: isOffline,
+        localMBTilesUrl: null,
+      );
+      try {
+        await _controller!.setStyle(jsonEncode(styleJson));
+      } catch (e) {
+        debugPrint('Error resetting map style: $e');
+      }
+      return;
+    }
+
+    final activePack = widget.repository.getRegionPackById(packId);
+    final localMBTilesUrl = activePack != null
+        ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
+        : null;
+
+    final styleJson = _mapEngine.tile.generateStyle(
+      isOffline: isOffline,
+      localMBTilesUrl: localMBTilesUrl,
+    );
+
+    // Centering is now handled by WhamiRepository to ensure tracking is disabled
+
+    try {
+      await _controller!.setStyle(jsonEncode(styleJson));
+    } catch (e) {
+      debugPrint('Error loading map style on pack activation: $e');
+    }
   }
 
   /// Triggered on every map movement. LandmarkEngine viewport cache intercepts
@@ -120,7 +165,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
     }
 
     if (widget.repository.activePackId != oldWidget.repository.activePackId) {
-      _loadPackLayers();
+      _onActivePackChanged();
     } else {
       _mapEngine.layer.updateVisibility(widget.layerVisibility);
     }
@@ -225,19 +270,30 @@ class _WhamiMapViewState extends State<WhamiMapView>
 
   @override
   Widget build(BuildContext context) {
-    final activePackId = widget.repository.activePackId;
+    final activePack = widget.repository.activeRegionPack;
     
     // Pick center coords or fallback
-    final centerCoords = activePackId == 'tahoe'
-        ? const LatLng(39.0968, -120.0324)
-        : const LatLng(37.8087, -122.4098);
+    LatLng centerCoords = const LatLng(37.8087, -122.4098);
+    if (activePack?.metadata != null) {
+      final bounds = activePack!.metadata!.bounds;
+      if (bounds.length == 4 && bounds[0] != 0 && bounds[1] != 0) {
+        // [minLat, minLon, maxLat, maxLon]
+        final lat = (bounds[0] + bounds[2]) / 2.0;
+        final lng = (bounds[1] + bounds[3]) / 2.0;
+        centerCoords = LatLng(lat, lng);
+      }
+    }
 
     final isOffline = widget.repository.connectivityMode == ConnectivityMode.offline;
     
     // Mount style sheet through tile engine
+    final localMBTilesUrl = activePack != null
+        ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
+        : null;
+
     final styleJson = _mapEngine.tile.generateStyle(
       isOffline: isOffline,
-      localMBTilesPath: activePackId.isNotEmpty ? activePackId : null,
+      localMBTilesUrl: localMBTilesUrl,
     );
 
     return Stack(
@@ -263,6 +319,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
               zoom: 8,
             ),
             onMapCreated: _onMapCreated,
+            onStyleLoadedCallback: _onStyleLoaded,
             styleString: jsonEncode(styleJson),
             myLocationEnabled: true,
             myLocationTrackingMode: MyLocationTrackingMode.tracking,

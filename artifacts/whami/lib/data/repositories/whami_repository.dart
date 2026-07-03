@@ -22,7 +22,7 @@ class WhamiRepository extends ChangeNotifier {
   final PositionMatcher _matcher;
   final TrustFusionEngine _fusionEngine;
   final TrustEventLog _eventLog;
-  
+
   // Delegated Sub-Repositories
   final RegionRepository regionRepository;
   final LandmarkRepository landmarkRepository;
@@ -69,14 +69,16 @@ class WhamiRepository extends ChangeNotifier {
   String get alertSeverity => _alertSeverity;
   bool get isTracking => _isTracking;
   List<Map<String, double>> get trail => _trail;
-  
+
   // Proxy region properties
   String get activePackId => regionRepository.activePackId;
+  RegionPack? get activeRegionPack =>
+      regionRepository.regionEngine.activeRegionPack;
   List<RegionPack> get packs => regionRepository.packs;
   ConnectivityMode get connectivityMode => _connectivityMode;
 
   ConnectivityState get connectivityState {
-    final activePack = regionRepository.getRegionPackById(activePackId);
+    final activePack = activeRegionPack;
     final packName = activePack?.name ?? 'No Pack';
     final hasPack = activePack != null && activePack.status == 'downloaded';
     final status = hasPack ? 'Active' : 'Not Loaded';
@@ -120,8 +122,12 @@ class WhamiRepository extends ChangeNotifier {
         final lon = entry.value[1];
         final dLat = (lat - loc.latitude) * pi / 180.0;
         final dLon = (lon - loc.longitude) * pi / 180.0;
-        final a = sin(dLat / 2) * sin(dLat / 2) +
-            cos(loc.latitude * pi / 180.0) * cos(lat * pi / 180.0) * sin(dLon / 2) * sin(dLon / 2);
+        final a =
+            sin(dLat / 2) * sin(dLat / 2) +
+            cos(loc.latitude * pi / 180.0) *
+                cos(lat * pi / 180.0) *
+                sin(dLon / 2) *
+                sin(dLon / 2);
         final c = 2 * atan2(sqrt(a), sqrt(1 - a));
         if (c < minDistance) {
           minDistance = c;
@@ -131,18 +137,23 @@ class WhamiRepository extends ChangeNotifier {
     }
 
     // Auto-activate pack if downloaded
-    final isDownloaded = await regionRepository.regionEngine.storage.isPackDownloaded(defaultPackId);
+    final isDownloaded = await regionRepository.regionEngine.storage
+        .isPackDownloaded(defaultPackId);
     if (isDownloaded) {
       await activateRegionPack(defaultPackId);
     } else {
       // Find any first downloaded pack as default fallback
-      final installed = await regionRepository.regionEngine.storage.listDownloadedPacks();
+      final installed = await regionRepository.regionEngine.storage
+          .scanInstalledPacks();
       if (installed.isNotEmpty) {
         await activateRegionPack(installed.first.id);
       } else {
         // Fallback to demo coordinate focus
         if (_packCoordinates.containsKey(defaultPackId)) {
-          centerMapOn(_packCoordinates[defaultPackId]![0], _packCoordinates[defaultPackId]![1]);
+          centerMapOn(
+            _packCoordinates[defaultPackId]![0],
+            _packCoordinates[defaultPackId]![1],
+          );
         }
       }
     }
@@ -177,17 +188,36 @@ class WhamiRepository extends ChangeNotifier {
 
   // Proxy actions delegated to sub-repositories
   void startDownload(String packId) => regionRepository.startDownload(packId);
-  Future<void> deleteRegionPack(String packId) => regionRepository.deleteRegionPack(packId);
-  
+  Future<void> deleteRegionPack(String packId) =>
+      regionRepository.deleteRegionPack(packId);
+
   Future<void> activateRegionPack(String packId) async {
     await regionRepository.activateRegionPack(packId);
-    if (_packCoordinates.containsKey(packId)) {
+
+    if (_isTracking) {
+      toggleTracking();
+    }
+
+    final activePack = regionRepository.getRegionPackById(packId);
+    if (activePack?.metadata != null) {
+      final bounds = activePack!.metadata!.bounds;
+      if (bounds.length == 4 && bounds[0] != 0 && bounds[1] != 0) {
+        final lat = (bounds[0] + bounds[2]) / 2.0;
+        final lng = (bounds[1] + bounds[3]) / 2.0;
+        centerMapOn(lat, lng);
+      }
+    } else if (_packCoordinates.containsKey(packId)) {
       centerMapOn(_packCoordinates[packId]![0], _packCoordinates[packId]![1]);
     }
-    
     // Load active pack landmarks cache for legacy synchronous API
     try {
-      _activePackLandmarks = await landmarkRepository.getVisibleLandmarks(-90, -180, 90, 180, limit: 1000);
+      _activePackLandmarks = await landmarkRepository.getVisibleLandmarks(
+        -90,
+        -180,
+        90,
+        180,
+        limit: 1000,
+      );
       mapRepository.updateVisibleLandmarks(_activePackLandmarks);
     } catch (_) {
       _activePackLandmarks = [];
@@ -195,7 +225,8 @@ class WhamiRepository extends ChangeNotifier {
 
     _eventLog.addEvent(
       title: 'Region Activated',
-      description: 'Pack "${regionRepository.getRegionPackById(packId)?.name ?? packId}" is now the active region.',
+      description:
+          'Pack "${regionRepository.getRegionPackById(packId)?.name ?? packId}" is now the active region.',
       severity: 'info',
       iconName: 'map',
     );
@@ -216,7 +247,8 @@ class WhamiRepository extends ChangeNotifier {
   }
 
   List<RegionPack> getRegionPacks() => packs;
-  RegionPack? getRegionPackById(String id) => regionRepository.getRegionPackById(id);
+  RegionPack? getRegionPackById(String id) =>
+      regionRepository.getRegionPackById(id);
 
   /// Start background magnetometer feed from physical hardware
   void startMagnetometerFeed() {
@@ -317,7 +349,8 @@ class WhamiRepository extends ChangeNotifier {
     _opinions = fusion.opinions;
     _trustScore = fusion.confidence;
 
-    if (fusion.alertSeverity != _alertSeverity && fusion.alertSeverity != 'none') {
+    if (fusion.alertSeverity != _alertSeverity &&
+        fusion.alertSeverity != 'none') {
       _eventLog.addEvent(
         title: 'Fusion Status Change',
         description: fusion.alertMessage,
@@ -346,7 +379,8 @@ class WhamiRepository extends ChangeNotifier {
   void setLandmarkAnchor(Landmark landmark, int matchPercent) {
     _eventLog.addEvent(
       title: 'Visual Anchor Set',
-      description: '${landmark.name} matched at $matchPercent% — used as position anchor.',
+      description:
+          '${landmark.name} matched at $matchPercent% — used as position anchor.',
       severity: 'info',
       iconName: 'anchor',
     );
@@ -354,10 +388,14 @@ class WhamiRepository extends ChangeNotifier {
   }
 
   /// Record AR visual confirmation match scores
-  void recordArScanResult({required String poseQuality, required int visualMatch}) {
+  void recordArScanResult({
+    required String poseQuality,
+    required int visualMatch,
+  }) {
     _eventLog.addEvent(
       title: 'AR Visual Confirmation',
-      description: 'AR Scan completed — pose quality: $poseQuality, visual match: $visualMatch%.',
+      description:
+          'AR Scan completed — pose quality: $poseQuality, visual match: $visualMatch%.',
       severity: visualMatch >= 80 ? 'info' : 'warning',
       iconName: 'view_in_ar',
     );
@@ -409,7 +447,8 @@ class WhamiRepository extends ChangeNotifier {
             confidence: magConfidence,
             uncertaintyRadius: magService.detectInterference() ? 500.0 : 150.0,
             status: magService.detectInterference() ? 'unstable' : 'active',
-            description: 'Live: ${magReading.heading.toStringAsFixed(0)}° heading',
+            description:
+                'Live: ${magReading.heading.toStringAsFixed(0)}° heading',
           )
         else
           PositionOpinion.unavailable(
@@ -434,7 +473,9 @@ class WhamiRepository extends ChangeNotifier {
         name: 'Trust Fusion Engine',
         status: _isTracking ? 'active' : 'available',
         confidence: _trustScore,
-        latestValue: _isTracking ? 'Consensus confidence: $_trustScore%' : 'Ready',
+        latestValue: _isTracking
+            ? 'Consensus confidence: $_trustScore%'
+            : 'Ready',
         healthMessage: _alertMessage,
         iconName: 'security',
         lastUpdated: DateTime.now(),

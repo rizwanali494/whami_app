@@ -6,44 +6,142 @@ import '../../../data/models/position_opinion.dart';
 class TileEngine {
   /// Generate MapLibre Style JSON using offline or online base maps.
   /// When offline, it points to local sources or falls back to solid background.
-  Map<String, dynamic> generateStyle({required bool isOffline, String? localMBTilesPath}) {
-    // If localMBTilesPath is available, we could serve it via local server,
-    // but standard MapLibre style JSON defaults to a basic raster basemap.
-    return {
-      'version': 8,
-      'name': 'WHAMI Dynamic Style',
-      'sources': {
-        'open-tiles': {
-          'type': 'raster',
-          'tiles': [
-            'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-            'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-            'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          ],
-          'tileSize': 256,
-          'attribution': '© OpenStreetMap, © CartoDB',
+  Map<String, dynamic> generateStyle({
+    required bool isOffline,
+    String? localMBTilesUrl,
+  }) {
+    final Map<String, dynamic> sources = {
+      'open-tiles': {
+        'type': 'raster',
+        'tiles': [
+          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        ],
+        'tileSize': 256,
+        'attribution': '© OpenStreetMap, © CartoDB',
+      },
+    };
+
+    final List<dynamic> layers = [
+      {
+        'id': 'solid-background',
+        'type': 'background',
+        'paint': {'background-color': '#E8EDF2'},
+      },
+      {
+        'id': 'base-tiles',
+        'type': 'raster',
+        'source': 'open-tiles',
+        'minzoom': 0,
+        'maxzoom': 14,
+        'layout': {
+          'visibility':
+              (isOffline ||
+                  (localMBTilesUrl != null && localMBTilesUrl.isNotEmpty))
+              ? 'none'
+              : 'visible',
         },
       },
-      'layers': [
+    ];
+
+    if (localMBTilesUrl != null && localMBTilesUrl.isNotEmpty) {
+      sources['mbtiles-source'] = {
+        'type': 'vector',
+        'tiles': ['$localMBTilesUrl/{z}/{x}/{y}.pbf'],
+        'minzoom': 0,
+        'maxzoom': 14,
+      };
+
+      layers.addAll([
         {
-          'id': 'solid-background',
-          'type': 'background',
+          'id': 'landcover',
+          'type': 'fill',
+          'source': 'mbtiles-source',
+          'source-layer': 'landcover',
+          'paint': {'fill-color': '#D8E8C8', 'fill-opacity': 0.8},
+        },
+        {
+          'id': 'landuse',
+          'type': 'fill',
+          'source': 'mbtiles-source',
+          'source-layer': 'landuse',
+          'paint': {'fill-color': '#E5E0D8', 'fill-opacity': 0.8},
+        },
+        {
+          'id': 'water',
+          'type': 'fill',
+          'source': 'mbtiles-source',
+          'source-layer': 'water',
+          'paint': {'fill-color': '#A0C8F0', 'fill-opacity': 1.0},
+        },
+        {
+          'id': 'transportation',
+          'type': 'line',
+          'source': 'mbtiles-source',
+          'source-layer': 'transportation',
           'paint': {
-            'background-color': '#E8EDF2',
+            'line-color': '#FFFFFF',
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10,
+              1.0,
+              14,
+              3.0,
+              18,
+              10.0,
+            ],
           },
         },
         {
-          'id': 'base-tiles',
-          'type': 'raster',
-          'source': 'open-tiles',
-          'minzoom': 0,
-          'maxzoom': 14,
-          // Hide base tiles if completely offline to avoid network warnings
-          'layout': {
-            'visibility': isOffline ? 'none' : 'visible',
-          }
+          'id': 'building',
+          'type': 'fill',
+          'source': 'mbtiles-source',
+          'source-layer': 'building',
+          'paint': {
+            'fill-color': '#CBD1D6',
+            'fill-opacity': 0.7,
+            'fill-outline-color': '#A9B0B7',
+          },
         },
-      ],
+        {
+          'id': 'place',
+          'type': 'symbol',
+          'source': 'mbtiles-source',
+          'source-layer': 'place',
+          'layout': {
+            'text-field': ['get', 'name:latin'],
+            'text-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10,
+              12,
+              14,
+              16,
+            ],
+            'text-font': [
+              'Open Sans Regular',
+            ], // Fallback if needed, wait maplibre usually has local fonts or needs glyphs
+          },
+          'paint': {
+            'text-color': '#333333',
+            'text-halo-color': '#FFFFFF',
+            'text-halo-width': 1,
+          },
+        },
+      ]);
+    }
+
+    return {
+      'version': 8,
+      'name': 'WHAMI Dynamic Style',
+      // If we use text-font, we MUST provide glyphs. Let's remove text-font so it uses default/system, or provide a dummy glyphs URL.
+      'glyphs': 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      'sources': sources,
+      'layers': layers,
     };
   }
 }
@@ -142,7 +240,9 @@ class LayerEngine {
     try {
       c.setLayerProperties(
         'landmark-layer',
-        SymbolLayerProperties(visibility: landmarksVisible ? 'visible' : 'none'),
+        SymbolLayerProperties(
+          visibility: landmarksVisible ? 'visible' : 'none',
+        ),
       );
       c.setLayerProperties(
         'magnetic-layer',
@@ -194,7 +294,10 @@ class OverlayEngine {
   }
 
   /// Draw consensus position opinions onto the map
-  Future<void> drawOpinions(List<PositionOpinion> opinions, bool visible) async {
+  Future<void> drawOpinions(
+    List<PositionOpinion> opinions,
+    bool visible,
+  ) async {
     final c = _controller;
     if (c == null) return;
 
@@ -207,7 +310,8 @@ class OverlayEngine {
       if (op.confidence == 0 || !op.isActive) continue;
 
       final color = _colorForSource(op.sourceType);
-      final hexColor = '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
+      final hexColor =
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
       await c.addCircle(
         CircleOptions(
@@ -234,13 +338,20 @@ class OverlayEngine {
 
   Color _colorForSource(String sourceType) {
     switch (sourceType) {
-      case 'whami': return AppColors.whami;
-      case 'gps': return AppColors.gps;
-      case 'landmark': return AppColors.landmark;
-      case 'magnetic': return AppColors.magnetic;
-      case 'sextant': return AppColors.sextant;
-      case 'imu': return AppColors.imu;
-      default: return Colors.white;
+      case 'whami':
+        return AppColors.whami;
+      case 'gps':
+        return AppColors.gps;
+      case 'landmark':
+        return AppColors.landmark;
+      case 'magnetic':
+        return AppColors.magnetic;
+      case 'sextant':
+        return AppColors.sextant;
+      case 'imu':
+        return AppColors.imu;
+      default:
+        return Colors.white;
     }
   }
 }

@@ -1,0 +1,17 @@
+{
+    "id": "pakistan_lahore",
+    "name": "Lahore",
+    "country": "Pakistan",
+    "version": "1.0.0",
+    "description": "Offline map and landmarks for Lahore",
+    "bounds": {
+        "minLat": 31.3500,
+        "minLon": 74.2000,
+        "maxLat": 31.6500,
+        "maxLon": 74.4500
+    },
+    "mapFile": "map.mbtiles",
+    "landmarkFile": "landmarks.sqlite",
+    "createdAt": "2026-07-03T00:00:00Z",
+    "schemaVersion": 1
+}
