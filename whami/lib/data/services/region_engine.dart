@@ -96,7 +96,17 @@ class RegionEngine {
         regionName: meta.name,
       );
 
-      // If an old version exists, delete it first
+      // // If an old version exists, delete it first
+      // if (await finalDir.exists()) {
+      //   await finalDir.delete(recursive: true);
+      // }
+
+      // If this pack is currently active, release all resources first.
+      if (isPackActive(meta.id)) {
+        await deactivatePack();
+      }
+
+      // Remove previous installation if it exists.
       if (await finalDir.exists()) {
         await finalDir.delete(recursive: true);
       }
@@ -148,8 +158,21 @@ class RegionEngine {
 
     await landmarkDatabase.open(dbPath);
 
+    // // 4. Open map.mbtiles connection on the local tile server
+    // final mapPath = await storage.getMBTilesPath(packId);
+    // await tileServer.setActiveMBTiles(mapPath);
+
     // 4. Open map.mbtiles connection on the local tile server
     final mapPath = await storage.getMBTilesPath(packId);
+
+    if (mapPath == null) {
+      throw StateError(
+        'Cannot activate pack $packId: map.mbtiles missing on disk.',
+      );
+    }
+
+    debugPrint('[RegionEngine] Loading MBTiles: $mapPath');
+
     await tileServer.setActiveMBTiles(mapPath);
 
     final packDir = await storage.getPackDirectory(packId);

@@ -114,88 +114,197 @@ class RegionPackStorage {
     return null;
   }
 
-  /// Copy bundled region packs into the application's documents directory.
-  /// This runs on every startup, but only copies packs that don't already exist.
-  Future<void> discoverBundledPacks() async {
-    final packsDir = await _packsDirectory;
+  // /// Copy bundled region packs into the application's documents directory.
+  // /// This runs on every startup, but only copies packs that don't already exist.
+  // Future<void> discoverBundledPacks() async {
+  //   final packsDir = await _packsDirectory;
 
-    try {
-      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+  //   try {
+  //     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
 
-      final bundledAssets = manifest
-          .listAssets()
-          .where((asset) => asset.startsWith('region_packs/'))
-          .toList();
+  //     final bundledAssets = manifest
+  //         .listAssets()
+  //         .where((asset) => asset.startsWith('region_packs/'))
+  //         .toList();
 
-      debugPrint(
-        '[RegionPackStorage] Found ${bundledAssets.length} bundled assets.',
+  //     debugPrint(
+  //       '[RegionPackStorage] Found ${bundledAssets.length} bundled assets.',
+  //     );
+
+  //     for (final asset in bundledAssets) {
+  //       debugPrint('[RegionPackStorage] Asset: $asset');
+  //     }
+
+  //     if (bundledAssets.isEmpty) {
+  //       debugPrint('[RegionPackStorage] No bundled region packs found.');
+  //       return;
+  //     }
+
+  //     /// Collect unique pack folders
+  //     final packFolders = <String>{};
+
+  //     for (final asset in bundledAssets) {
+  //       final parts = asset.split('/');
+
+  //       if (parts.length >= 3) {
+  //         packFolders.add('${parts[0]}/${parts[1]}');
+  //       }
+  //     }
+
+  //     debugPrint(
+  //       '[RegionPackStorage] Found ${packFolders.length} bundled packs.',
+  //     );
+
+  //     for (final folder in packFolders) {
+  //       final packName = folder.split('/').last;
+
+  //       final destination = Directory('${packsDir.path}/$packName');
+
+  //       // /// Skip already installed packs
+  //       // if (await destination.exists()) {
+  //       //   debugPrint('[RegionPackStorage] Pack already installed: $packName');
+  //       //   continue;
+  //       // }
+
+  //       /// Always replace bundled packs with the latest bundled version
+  //       if (await destination.exists()) {
+  //         try {
+  //           await destination.delete(recursive: true);
+  //         } catch (e) {
+  //           debugPrint("Delete failed: $e");
+  //         }
+  //       }
+
+  //       if (!await destination.exists()) {
+  //         await destination.create(recursive: true);
+  //       }
+
+  //       final files = bundledAssets.where(
+  //         (asset) => asset.startsWith('$folder/'),
+  //       );
+
+  //       for (final assetPath in files) {
+  //         final fileName = assetPath.split('/').last;
+
+  //         final byteData = await rootBundle.load(assetPath);
+
+  //         final outputFile = File('${destination.path}/$fileName');
+
+  //         await outputFile.writeAsBytes(
+  //           byteData.buffer.asUint8List(
+  //             byteData.offsetInBytes,
+  //             byteData.lengthInBytes,
+  //           ),
+  //         );
+
+  //         debugPrint('[RegionPackStorage] Copied: $fileName -> $packName');
+  //       }
+
+  //       debugPrint('[RegionPackStorage] Installed bundled pack: $packName');
+  //     }
+  //   } catch (e, stackTrace) {
+  //     debugPrint('[RegionPackStorage] Failed to discover bundled packs:\n$e');
+  //     debugPrint(stackTrace.toString());
+  //   }
+  // }
+
+  /// Copies bundled Region Packs into the application's documents directory.
+/// Existing files are overwritten, but the pack directory itself is never
+/// deleted. This avoids file-lock issues with SQLite/MBTiles.
+Future<void> discoverBundledPacks() async {
+  final packsDir = await _packsDirectory;
+
+  try {
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+
+    final bundledAssets = manifest
+        .listAssets()
+        .where((asset) => asset.startsWith('region_packs/'))
+        .toList();
+
+    debugPrint(
+      '[RegionPackStorage] Found ${bundledAssets.length} bundled assets.',
+    );
+
+    if (bundledAssets.isEmpty) {
+      debugPrint('[RegionPackStorage] No bundled region packs found.');
+      return;
+    }
+
+    /// Collect pack folders
+    final packFolders = <String>{};
+
+    for (final asset in bundledAssets) {
+      final parts = asset.split('/');
+
+      if (parts.length >= 3) {
+        packFolders.add('${parts[0]}/${parts[1]}');
+      }
+    }
+
+    debugPrint(
+      '[RegionPackStorage] Found ${packFolders.length} bundled packs.',
+    );
+
+    for (final folder in packFolders) {
+      final packName = folder.split('/').last;
+
+      final destination = Directory('${packsDir.path}/$packName');
+
+      if (!await destination.exists()) {
+        await destination.create(recursive: true);
+      }
+
+      final files = bundledAssets.where(
+        (asset) => asset.startsWith('$folder/'),
       );
 
-      for (final asset in bundledAssets) {
-        debugPrint('[RegionPackStorage] Asset: $asset');
-      }
+      for (final assetPath in files) {
+        final fileName = assetPath.split('/').last;
 
-      if (bundledAssets.isEmpty) {
-        debugPrint('[RegionPackStorage] No bundled region packs found.');
-        return;
-      }
-
-      /// Collect unique pack folders
-      final packFolders = <String>{};
-
-      for (final asset in bundledAssets) {
-        final parts = asset.split('/');
-
-        if (parts.length >= 3) {
-          packFolders.add('${parts[0]}/${parts[1]}');
-        }
-      }
-
-      debugPrint(
-        '[RegionPackStorage] Found ${packFolders.length} bundled packs.',
-      );
-
-      for (final folder in packFolders) {
-        final packName = folder.split('/').last;
-
-        final destination = Directory('${packsDir.path}/$packName');
-
-        /// Skip already installed packs
-        if (await destination.exists()) {
-          debugPrint('[RegionPackStorage] Pack already installed: $packName');
+        // Ignore macOS metadata
+        if (fileName == '.DS_Store') {
           continue;
         }
 
-        await destination.create(recursive: true);
+        final byteData = await rootBundle.load(assetPath);
 
-        final files = bundledAssets.where(
-          (asset) => asset.startsWith('$folder/'),
-        );
+        final outputFile = File('${destination.path}/$fileName');
 
-        for (final assetPath in files) {
-          final fileName = assetPath.split('/').last;
-
-          final byteData = await rootBundle.load(assetPath);
-
-          final outputFile = File('${destination.path}/$fileName');
-
-          await outputFile.writeAsBytes(
-            byteData.buffer.asUint8List(
-              byteData.offsetInBytes,
-              byteData.lengthInBytes,
-            ),
-          );
-
-          debugPrint('[RegionPackStorage] Copied: $fileName -> $packName');
+        // Remove existing file first
+        if (await outputFile.exists()) {
+          try {
+            await outputFile.delete();
+          } catch (_) {
+            // Ignore delete failure; writeAsBytes below may still succeed.
+          }
         }
 
-        debugPrint('[RegionPackStorage] Installed bundled pack: $packName');
+        await outputFile.writeAsBytes(
+          byteData.buffer.asUint8List(
+            byteData.offsetInBytes,
+            byteData.lengthInBytes,
+          ),
+          flush: true,
+        );
+
+        debugPrint(
+          '[RegionPackStorage] Updated: $packName/$fileName',
+        );
       }
-    } catch (e, stackTrace) {
-      debugPrint('[RegionPackStorage] Failed to discover bundled packs:\n$e');
-      debugPrint(stackTrace.toString());
+
+      debugPrint(
+        '[RegionPackStorage] Bundled pack synced: $packName',
+      );
     }
+  } catch (e, stackTrace) {
+    debugPrint('========== REGION PACK ERROR ==========');
+    debugPrint('Exception: $e');
+    debugPrint('Type: ${e.runtimeType}');
+    debugPrint(stackTrace.toString());
+    debugPrint('=======================================');
   }
+}
 
   /// Scans local folder and returns metadata list of downloaded packs (Filesystem as Registry)
   Future<List<RegionPack>> scanInstalledPacks() async {
