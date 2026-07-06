@@ -77,6 +77,11 @@ class WhamiRepository extends ChangeNotifier {
   List<RegionPack> get packs => regionRepository.packs;
   ConnectivityMode get connectivityMode => _connectivityMode;
 
+  /// Base URL of the local MBTiles tile server (e.g. 'http://127.0.0.1:52341')
+  /// Empty string when no pack is active or server has not started yet.
+  String get tileServerBaseUrl =>
+      regionRepository.regionEngine.tileServer.baseUrl;
+
   ConnectivityState get connectivityState {
     final activePack = activeRegionPack;
     final packName = activePack?.name ?? 'No Pack';
