@@ -37,6 +37,12 @@ class WhamiRepository extends ChangeNotifier {
   final List<Map<String, double>> _trail = [];
   List<Landmark> _activePackLandmarks = [];
 
+  // Cache of the last GPS fix a landmark query was run for, so snapshots
+  // triggered purely by IMU/magnetometer/barometer ticks (which can fire at
+  // several Hz) don't each re-issue an expensive SQLite lookup.
+  DateTime? _lastLandmarkQueryGpsTimestamp;
+  LandmarkMatch? _lastLandmarkMatch;
+
   // Active pack coordinate coordinates cache
   static const Map<String, List<double>> _packCoordinates = {
     'sf_bay': [37.7140, -122.3078],
@@ -315,18 +321,28 @@ class WhamiRepository extends ChangeNotifier {
     SeamapMatch? sMatch;
 
     if (gpsReading != null) {
-      // Query SQLite database for landmarks within 5km radius
-      final nearbyLandmarks = await landmarkRepository.getNearbyLandmarks(
-        gpsReading.latitude,
-        gpsReading.longitude,
-        5000.0,
-      );
+      // Snapshots fire on every sensor tick (IMU alone ticks at 5Hz), but the
+      // cached GPS reading only actually changes when a new fix arrives.
+      // Skip the SQLite lookup for repeat snapshots referencing the same fix.
+      if (_lastLandmarkQueryGpsTimestamp != gpsReading.timestamp) {
+        // Query SQLite database for landmarks within 5km radius
+        final nearbyLandmarks = await landmarkRepository.getNearbyLandmarks(
+          gpsReading.latitude,
+          gpsReading.longitude,
+          5000.0,
+        );
 
-      lMatch = _matcher.matchLandmarksList(
-        latitude: gpsReading.latitude,
-        longitude: gpsReading.longitude,
-        landmarks: nearbyLandmarks,
-      );
+        lMatch = _matcher.matchLandmarksList(
+          latitude: gpsReading.latitude,
+          longitude: gpsReading.longitude,
+          landmarks: nearbyLandmarks,
+        );
+
+        _lastLandmarkQueryGpsTimestamp = gpsReading.timestamp;
+        _lastLandmarkMatch = lMatch;
+      } else {
+        lMatch = _lastLandmarkMatch;
+      }
 
       // Perform expected WMM magnetic baseline comparisons if region has base grid
       // For this refactor, we can pass null or generate temporary magnetic parameters

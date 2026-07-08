@@ -18,8 +18,7 @@ class TileEngine {
     required bool isOffline,
     String? localMBTilesUrl,
   }) {
-    final hasLocalTiles =
-        localMBTilesUrl != null && localMBTilesUrl.isNotEmpty;
+    final hasLocalTiles = localMBTilesUrl != null && localMBTilesUrl.isNotEmpty;
 
     // ── Sources ─────────────────────────────────────────────────────────────
     final Map<String, dynamic> sources = {};
@@ -75,8 +74,15 @@ class TileEngine {
         'paint': {
           'line-color': '#7EC8E3',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            8, 0.5, 12, 2.0, 14, 3.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            8,
+            0.5,
+            12,
+            2.0,
+            14,
+            3.0,
           ],
         },
       });
@@ -87,7 +93,11 @@ class TileEngine {
         'type': 'fill',
         'source': 'openmaptiles',
         'source-layer': 'landcover',
-        'filter': ['==', ['get', 'class'], 'grass'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'grass',
+        ],
         'paint': {'fill-color': '#D4EDBC', 'fill-opacity': 0.8},
       });
       layers.add({
@@ -95,7 +105,11 @@ class TileEngine {
         'type': 'fill',
         'source': 'openmaptiles',
         'source-layer': 'landcover',
-        'filter': ['==', ['get', 'class'], 'wood'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'wood',
+        ],
         'paint': {'fill-color': '#BDDFAD', 'fill-opacity': 0.75},
       });
 
@@ -106,8 +120,12 @@ class TileEngine {
         'source': 'openmaptiles',
         'source-layer': 'landuse',
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['park', 'pitch', 'recreation_ground', 'garden']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['park', 'pitch', 'recreation_ground', 'garden'],
+          ],
         ],
         'paint': {'fill-color': '#C8E6C0', 'fill-opacity': 0.85},
       });
@@ -116,7 +134,11 @@ class TileEngine {
         'type': 'fill',
         'source': 'openmaptiles',
         'source-layer': 'landuse',
-        'filter': ['==', ['get', 'class'], 'residential'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'residential',
+        ],
         'paint': {'fill-color': '#EBEBEB', 'fill-opacity': 0.6},
       });
       layers.add({
@@ -125,8 +147,12 @@ class TileEngine {
         'source': 'openmaptiles',
         'source-layer': 'landuse',
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['commercial', 'retail', 'industrial']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['commercial', 'retail', 'industrial'],
+          ],
         ],
         'paint': {'fill-color': '#F5DEB3', 'fill-opacity': 0.5},
       });
@@ -150,8 +176,13 @@ class TileEngine {
         'paint': {
           'fill-color': '#D9C9B5',
           'fill-opacity': [
-            'interpolate', ['linear'], ['zoom'],
-            13, 0.4, 15, 0.9,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            13,
+            0.4,
+            15,
+            0.9,
           ],
           'fill-outline-color': '#C4A882',
         },
@@ -163,13 +194,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'motorway'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'motorway',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#D4820A',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            5, 2.0, 10, 6.0, 14, 10.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            5,
+            2.0,
+            10,
+            6.0,
+            14,
+            10.0,
           ],
         },
       });
@@ -178,13 +220,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'trunk'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'trunk',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#C9A000',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            6, 1.5, 10, 5.5, 14, 9.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6,
+            1.5,
+            10,
+            5.5,
+            14,
+            9.0,
           ],
         },
       });
@@ -193,13 +246,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'primary'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'primary',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#BBBBBB',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            7, 1.5, 10, 5.0, 14, 8.5,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            7,
+            1.5,
+            10,
+            5.0,
+            14,
+            8.5,
           ],
         },
       });
@@ -209,15 +273,26 @@ class TileEngine {
         'source': 'openmaptiles',
         'source-layer': 'transportation',
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['secondary', 'tertiary']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['secondary', 'tertiary'],
+          ],
         ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#C4C4C4',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            9, 1.0, 12, 4.0, 14, 7.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            9,
+            1.0,
+            12,
+            4.0,
+            14,
+            7.0,
           ],
         },
       });
@@ -228,13 +303,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'motorway'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'motorway',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#FFA726',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            5, 1.0, 10, 4.0, 14, 7.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            5,
+            1.0,
+            10,
+            4.0,
+            14,
+            7.0,
           ],
         },
       });
@@ -243,13 +329,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'trunk'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'trunk',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#FFD54F',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            6, 1.0, 10, 3.5, 14, 6.5,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6,
+            1.0,
+            10,
+            3.5,
+            14,
+            6.5,
           ],
         },
       });
@@ -258,13 +355,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'primary'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'primary',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#FFFFFF',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            7, 0.8, 10, 3.0, 14, 6.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            7,
+            0.8,
+            10,
+            3.0,
+            14,
+            6.0,
           ],
         },
       });
@@ -273,13 +381,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'secondary'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'secondary',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#FFFFFF',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            9, 0.6, 12, 2.5, 14, 5.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            9,
+            0.6,
+            12,
+            2.5,
+            14,
+            5.0,
           ],
         },
       });
@@ -288,13 +407,24 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'transportation',
-        'filter': ['==', ['get', 'class'], 'tertiary'],
+        'filter': [
+          '==',
+          ['get', 'class'],
+          'tertiary',
+        ],
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#F5F5F5',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            10, 0.4, 12, 2.0, 14, 4.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.4,
+            12,
+            2.0,
+            14,
+            4.0,
           ],
         },
       });
@@ -304,16 +434,25 @@ class TileEngine {
         'source': 'openmaptiles',
         'source-layer': 'transportation',
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['minor', 'service', 'track']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['minor', 'service', 'track'],
+          ],
         ],
         'minzoom': 12,
         'layout': {'line-cap': 'round', 'line-join': 'round'},
         'paint': {
           'line-color': '#EEEEEE',
           'line-width': [
-            'interpolate', ['linear'], ['zoom'],
-            12, 0.3, 14, 2.0,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            12,
+            0.3,
+            14,
+            2.0,
           ],
         },
       });
@@ -323,8 +462,12 @@ class TileEngine {
         'source': 'openmaptiles',
         'source-layer': 'transportation',
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['path', 'pedestrian', 'cycleway']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['path', 'pedestrian', 'cycleway'],
+          ],
         ],
         'minzoom': 13,
         'layout': {'line-cap': 'round', 'line-join': 'round'},
@@ -341,7 +484,11 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'boundary',
-        'filter': ['==', ['get', 'admin_level'], 2],
+        'filter': [
+          '==',
+          ['get', 'admin_level'],
+          2,
+        ],
         'paint': {
           'line-color': '#9E9E9E',
           'line-width': 1.5,
@@ -353,7 +500,11 @@ class TileEngine {
         'type': 'line',
         'source': 'openmaptiles',
         'source-layer': 'boundary',
-        'filter': ['==', ['get', 'admin_level'], 4],
+        'filter': [
+          '==',
+          ['get', 'admin_level'],
+          4,
+        ],
         'minzoom': 6,
         'paint': {
           'line-color': '#BDBDBD',
@@ -370,7 +521,11 @@ class TileEngine {
         'source-layer': 'transportation_name',
         'minzoom': 12,
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': 10,
           'symbol-placement': 'line',
           'text-max-angle': 30,
@@ -390,7 +545,11 @@ class TileEngine {
         'source-layer': 'water_name',
         'minzoom': 10,
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': 11,
           'symbol-placement': 'point',
         },
@@ -409,7 +568,11 @@ class TileEngine {
         'source-layer': 'waterway',
         'minzoom': 13,
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': 10,
           'symbol-placement': 'line',
         },
@@ -428,7 +591,11 @@ class TileEngine {
         'source-layer': 'park',
         'minzoom': 12,
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': 11,
           'symbol-placement': 'point',
         },
@@ -446,9 +613,17 @@ class TileEngine {
         'source': 'openmaptiles',
         'source-layer': 'poi',
         'minzoom': 14,
-        'filter': ['<=', ['get', 'rank'], 3],
+        'filter': [
+          '<=',
+          ['get', 'rank'],
+          3,
+        ],
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': 11,
           'text-max-width': 8,
           'text-anchor': 'top',
@@ -469,11 +644,19 @@ class TileEngine {
         'source-layer': 'place',
         'minzoom': 11,
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['suburb', 'neighbourhood', 'quarter']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['suburb', 'neighbourhood', 'quarter'],
+          ],
         ],
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': 12,
           'text-transform': 'uppercase',
           'text-letter-spacing': 0.1,
@@ -493,14 +676,27 @@ class TileEngine {
         'source-layer': 'place',
         'minzoom': 8,
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['village', 'town']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['village', 'town'],
+          ],
         ],
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': [
-            'interpolate', ['linear'], ['zoom'],
-            8, 11, 12, 14,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            8,
+            11,
+            12,
+            14,
           ],
         },
         'paint': {
@@ -518,14 +714,29 @@ class TileEngine {
         'source-layer': 'place',
         'minzoom': 4,
         'filter': [
-          'in', ['get', 'class'],
-          ['literal', ['city', 'capital']],
+          'in',
+          ['get', 'class'],
+          [
+            'literal',
+            ['city', 'capital'],
+          ],
         ],
         'layout': {
-          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-field': [
+            'coalesce',
+            ['get', 'name:en'],
+            ['get', 'name'],
+          ],
           'text-size': [
-            'interpolate', ['linear'], ['zoom'],
-            4, 10, 8, 16, 12, 20,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            4,
+            10,
+            8,
+            16,
+            12,
+            20,
           ],
         },
         'paint': {
@@ -557,7 +768,6 @@ class TileEngine {
     };
   }
 }
-
 
 class LayerEngine {
   MapLibreMapController? _controller;
@@ -642,7 +852,7 @@ class LayerEngine {
   }
 
   /// Toggle layers visibility
-  void updateVisibility(Map<String, bool> visibility) {
+  Future<void> updateVisibility(Map<String, bool> visibility) async {
     final c = _controller;
     if (c == null) return;
 
@@ -651,17 +861,23 @@ class LayerEngine {
     final seamapVisible = visibility['seamap'] == true;
 
     try {
-      c.setLayerProperties(
+      await c.setLayerProperties(
         'landmark-layer',
         SymbolLayerProperties(
           visibility: landmarksVisible ? 'visible' : 'none',
         ),
       );
-      c.setLayerProperties(
+    } catch (_) {}
+
+    try {
+      await c.setLayerProperties(
         'magnetic-layer',
         CircleLayerProperties(visibility: magneticVisible ? 'visible' : 'none'),
       );
-      c.setLayerProperties(
+    } catch (_) {}
+
+    try {
+      await c.setLayerProperties(
         'seamap-layer',
         LineLayerProperties(visibility: seamapVisible ? 'visible' : 'none'),
       );
@@ -714,8 +930,13 @@ class OverlayEngine {
     final c = _controller;
     if (c == null) return;
 
-    await c.clearCircles();
-    await c.clearSymbols();
+    try {
+      await c.clearCircles();
+      await c.clearSymbols();
+    } catch (e) {
+      debugPrint('[OverlayEngine] clearCircles/clearSymbols failed: $e');
+      return;
+    }
 
     if (!visible) return;
 
@@ -726,26 +947,31 @@ class OverlayEngine {
       final hexColor =
           '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
-      await c.addCircle(
-        CircleOptions(
-          geometry: LatLng(op.latitude, op.longitude),
-          circleRadius: op.sourceType == 'whami' ? 12.0 : 8.0,
-          circleColor: hexColor,
-          circleOpacity: 0.85,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 1.5,
-        ),
-      );
+      try {
+        await c.addCircle(
+          CircleOptions(
+            geometry: LatLng(op.latitude, op.longitude),
+            circleRadius: op.sourceType == 'whami' ? 12.0 : 8.0,
+            circleColor: hexColor,
+            circleOpacity: 0.85,
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeWidth: 1.5,
+          ),
+        );
 
-      await c.addSymbol(
-        SymbolOptions(
-          geometry: LatLng(op.latitude, op.longitude),
-          textField: op.shortCode,
-          textColor: '#FFFFFF',
-          textSize: 9.0,
-          textAnchor: 'center',
-        ),
-      );
+        await c.addSymbol(
+          SymbolOptions(
+            geometry: LatLng(op.latitude, op.longitude),
+            textField: op.shortCode,
+            textColor: '#FFFFFF',
+            textSize: 9.0,
+            textAnchor: 'center',
+          ),
+        );
+      } catch (e) {
+        debugPrint('[OverlayEngine] addCircle/addSymbol failed: $e');
+        return; // Stop drawing — annotation manager likely invalidated
+      }
     }
   }
 

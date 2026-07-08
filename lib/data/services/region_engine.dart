@@ -122,7 +122,7 @@ class RegionEngine {
       );
 
       // Auto-activate
-      await activatePack(meta.id);
+      // await activatePack(meta.id);
     } catch (e) {
       debugPrint('[RegionEngine] Installation failed: $e');
       // Clean up temp dir on failure

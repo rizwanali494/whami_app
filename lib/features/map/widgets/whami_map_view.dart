@@ -31,12 +31,20 @@ class _WhamiMapViewState extends State<WhamiMapView>
   bool _packLoaded = false;
   bool _isUserPanning = false;
   late final AnimationController _pulseController;
-  
+
   // High-level MapEngine managing nested render pipelines
   final MapEngine _mapEngine = MapEngine();
 
   // Track whether opinions are currently being updated to prevent overlapping
   bool _isUpdatingOpinions = false;
+
+  // Track whether a camera-idle refresh is in flight to prevent overlapping
+  bool _isRefreshingCameraViewport = false;
+
+  // Whether we've already zoomed the camera in for the current tracking
+  // session once a live GPS fix was confirmed (vs. sitting at the far-out
+  // initial zoom for every subsequent pan while tracking).
+  bool _hasZoomedForGpsConfirmation = false;
 
   @override
   void initState() {
@@ -57,7 +65,6 @@ class _WhamiMapViewState extends State<WhamiMapView>
   void _onMapCreated(MapLibreMapController controller) async {
     _controller = controller;
     _mapEngine.attach(controller);
-    _controller!.addListener(_onMapCameraChanged);
 
     if (widget.repository.activePackId.isEmpty) {
       final gps = widget.repository.sensors.gpsService;
@@ -72,13 +79,18 @@ class _WhamiMapViewState extends State<WhamiMapView>
   void _onStyleLoaded() async {
     if (!mounted) return;
     await _loadPackLayers();
+    if (_packLoaded) {
+      await _mapEngine.layer.updateVisibility(widget.layerVisibility);
+      _updateOpinionsMarkers();
+    }
   }
 
   void _onActivePackChanged() async {
     if (_controller == null) return;
 
     final packId = widget.repository.activePackId;
-    final isOffline = widget.repository.connectivityMode == ConnectivityMode.offline;
+    final isOffline =
+        widget.repository.connectivityMode == ConnectivityMode.offline;
 
     if (packId.isEmpty) {
       setState(() {
@@ -116,13 +128,16 @@ class _WhamiMapViewState extends State<WhamiMapView>
     }
   }
 
-  /// Triggered on every map movement. LandmarkEngine viewport cache intercepts
-  /// coordinates to guarantee sub-millisecond cache hits.
+  /// Triggered once the camera settles (not on every intermediate move frame).
+  /// LandmarkEngine viewport cache intercepts coordinates to guarantee
+  /// sub-millisecond cache hits.
   void _onMapCameraChanged() async {
     if (_controller == null || !_packLoaded) return;
+    if (_isRefreshingCameraViewport) return;
+    _isRefreshingCameraViewport = true;
     try {
       final bounds = await _controller!.getVisibleRegion();
-      
+
       // Update central MapRepository coordinate state
       widget.repository.mapRepository.updateBounds(
         bounds.southwest.latitude,
@@ -131,7 +146,9 @@ class _WhamiMapViewState extends State<WhamiMapView>
         bounds.northeast.longitude,
       );
 
-      widget.repository.mapRepository.updateZoom(_controller!.cameraPosition?.zoom ?? 8.0);
+      widget.repository.mapRepository.updateZoom(
+        _controller!.cameraPosition?.zoom ?? 8.0,
+      );
       if (_controller!.cameraPosition != null) {
         widget.repository.mapRepository.updateCenter(
           _controller!.cameraPosition!.target.latitude,
@@ -140,12 +157,13 @@ class _WhamiMapViewState extends State<WhamiMapView>
       }
 
       // Fetch from SQLite (or LandmarkEngine cache)
-      final visible = await widget.repository.landmarkRepository.getVisibleLandmarks(
-        bounds.southwest.latitude,
-        bounds.southwest.longitude,
-        bounds.northeast.latitude,
-        bounds.northeast.longitude,
-      );
+      final visible = await widget.repository.landmarkRepository
+          .getVisibleLandmarks(
+            bounds.southwest.latitude,
+            bounds.southwest.longitude,
+            bounds.northeast.latitude,
+            bounds.northeast.longitude,
+          );
 
       // Save to MapRepository state
       widget.repository.mapRepository.updateVisibleLandmarks(visible);
@@ -153,7 +171,10 @@ class _WhamiMapViewState extends State<WhamiMapView>
       // Reload landmarks symbol GeoJSON
       final geo = _landmarksToGeoJson(visible);
       await _controller!.setGeoJsonSource('landmarks', geo);
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _isRefreshingCameraViewport = false;
+    }
   }
 
   @override
@@ -162,14 +183,15 @@ class _WhamiMapViewState extends State<WhamiMapView>
 
     if (!oldWidget.repository.isTracking && widget.repository.isTracking) {
       _isUserPanning = false;
+      _hasZoomedForGpsConfirmation = false;
     }
 
     if (widget.repository.activePackId != oldWidget.repository.activePackId) {
       _onActivePackChanged();
-    } else {
+    } else if (_packLoaded) {
       _mapEngine.layer.updateVisibility(widget.layerVisibility);
     }
-    _updateOpinionsMarkers();
+    if (_packLoaded) _updateOpinionsMarkers();
     _handleMapCentering();
   }
 
@@ -188,6 +210,32 @@ class _WhamiMapViewState extends State<WhamiMapView>
       _isUserPanning = false;
     } else if (widget.repository.isTracking && !_isUserPanning) {
       final whamiPos = widget.repository.getTrustedPosition();
+
+      if (!_hasZoomedForGpsConfirmation) {
+        PositionOpinion? gpsOpinion;
+        try {
+          gpsOpinion = widget.repository.getPositionOpinions().firstWhere(
+            (o) => o.sourceType == 'gps',
+          );
+        } catch (_) {
+          gpsOpinion = null;
+        }
+        final gpsConfirmed =
+            gpsOpinion != null && gpsOpinion.status != 'unavailable';
+
+        if (gpsConfirmed) {
+          // Matches the mbtiles source's actual maxzoom (14) — avoids
+          // upscaled/overzoomed tiles at higher camera zoom levels.
+          _mapEngine.camera.centerOn(
+            whamiPos.latitude,
+            whamiPos.longitude,
+            zoom: 9.0,
+          );
+          _hasZoomedForGpsConfirmation = true;
+          return;
+        }
+      }
+
       _mapEngine.camera.panTo(whamiPos.latitude, whamiPos.longitude);
     }
   }
@@ -207,12 +255,13 @@ class _WhamiMapViewState extends State<WhamiMapView>
     try {
       // Feed local SQLite landmarks inside current view
       final bounds = await _controller!.getVisibleRegion();
-      final visible = await widget.repository.landmarkRepository.getVisibleLandmarks(
-        bounds.southwest.latitude,
-        bounds.southwest.longitude,
-        bounds.northeast.latitude,
-        bounds.northeast.longitude,
-      );
+      final visible = await widget.repository.landmarkRepository
+          .getVisibleLandmarks(
+            bounds.southwest.latitude,
+            bounds.southwest.longitude,
+            bounds.northeast.latitude,
+            bounds.northeast.longitude,
+          );
 
       final landmarksGeo = _landmarksToGeoJson(visible);
       final emptyGeo = {'type': 'FeatureCollection', 'features': []};
@@ -221,7 +270,8 @@ class _WhamiMapViewState extends State<WhamiMapView>
       await _mapEngine.layer.setupLayers(
         packId: packId,
         landmarksGeo: landmarksGeo,
-        magneticGeo: emptyGeo, // magnetic baseline generated dynamically in fusion engine if needed
+        magneticGeo:
+            emptyGeo, // magnetic baseline generated dynamically in fusion engine if needed
         seamapGeo: emptyGeo,
       );
 
@@ -263,6 +313,8 @@ class _WhamiMapViewState extends State<WhamiMapView>
     try {
       final showOpinions = widget.layerVisibility['opinions'] == true;
       await _mapEngine.overlay.drawOpinions(widget.opinions, showOpinions);
+    } catch (e) {
+      debugPrint('[WhamiMapView] _updateOpinionsMarkers failed: $e');
     } finally {
       _isUpdatingOpinions = false;
     }
@@ -271,7 +323,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
   @override
   Widget build(BuildContext context) {
     final activePack = widget.repository.activeRegionPack;
-    
+
     // Pick center coords or fallback
     LatLng centerCoords = const LatLng(37.8087, -122.4098);
     if (activePack?.metadata != null) {
@@ -284,8 +336,9 @@ class _WhamiMapViewState extends State<WhamiMapView>
       }
     }
 
-    final isOffline = widget.repository.connectivityMode == ConnectivityMode.offline;
-    
+    final isOffline =
+        widget.repository.connectivityMode == ConnectivityMode.offline;
+
     // Mount style sheet through tile engine
     final localMBTilesUrl = activePack != null
         ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
@@ -320,6 +373,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
             ),
             onMapCreated: _onMapCreated,
             onStyleLoadedCallback: _onStyleLoaded,
+            onCameraIdle: _onMapCameraChanged,
             styleString: jsonEncode(styleJson),
             myLocationEnabled: true,
             myLocationTrackingMode: MyLocationTrackingMode.tracking,
@@ -368,9 +422,11 @@ class _WhamiMapViewState extends State<WhamiMapView>
 
   String _buildCoverageOverlayLabel() {
     final List<String> activeLayers = [];
-    if (widget.layerVisibility['landmarks'] == true) activeLayers.add('landmarks');
+    if (widget.layerVisibility['landmarks'] == true)
+      activeLayers.add('landmarks');
     if (widget.layerVisibility['seamap'] == true) activeLayers.add('seamap');
-    if (widget.layerVisibility['magnetic'] == true) activeLayers.add('magnetic');
+    if (widget.layerVisibility['magnetic'] == true)
+      activeLayers.add('magnetic');
 
     if (activeLayers.isEmpty) return 'offline mode (no layers)';
     return activeLayers.join(' · ');
