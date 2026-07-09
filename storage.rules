@@ -1,0 +1,12 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Region map packs (.whami zips) are public, read-only download
+    // artifacts fetched anonymously by the app — no auth required to read,
+    // and no client is ever allowed to write into this path.
+    match /region_packs/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

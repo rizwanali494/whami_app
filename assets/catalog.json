@@ -1,0 +1,87 @@
+[
+  {
+    "id": "pakistan_lahore",
+    "name": "Lahore",
+    "country": "Pakistan",
+    "packType": "Urban",
+    "bundled": false,
+    "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/whami-8a0ce.firebasestorage.app/o/region_packs%2Fpakistan_lahore.whami?alt=media",
+    "checksum": "cf61a2ff9971a9460c4a8df305c3c19bb28ebc8f60a5d7583714f85dd0d89557",
+    "sizeBytes": 7666450,
+    "bounds": [
+      31.3500,
+      74.2000,
+      31.6500,
+      74.4500
+    ],
+    "trustScore": 88
+  },
+  {
+    "id": "usa_san_francisco",
+    "name": "San Francisco",
+    "country": "United States",
+    "packType": "Urban",
+    "bundled": false,
+    "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/whami-8a0ce.firebasestorage.app/o/region_packs%2Fusa_san_francisco.whami?alt=media",
+    "checksum": "879ac86e0939cb04b4af3a3b88682be0016a768c21cee2b713ef20c027738521",
+    "sizeBytes": 31172601,
+    "bounds": [
+      37.596,
+      -122.734,
+      37.954,
+      -122.107
+    ],
+    "trustScore": 90
+  },
+  {
+    "id": "usa_california",
+    "name": "California",
+    "country": "United States",
+    "packType": "Urban",
+    "bundled": false,
+    "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/whami-8a0ce.firebasestorage.app/o/region_packs%2Fusa_california.whami?alt=media",
+    "checksum": "ea0dcfad2c850d35fa388913ac634dcd5c658d06b88eba905748e698eb912e64",
+    "sizeBytes": 866483095,
+    "bounds": [
+      32.48171,
+      -125.8935,
+      42.01618,
+      -114.1291
+    ],
+    "trustScore": 90
+  },
+  {
+    "id": "usa_nevada",
+    "name": "Nevada",
+    "country": "United States",
+    "packType": "Urban",
+    "bundled": false,
+    "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/whami-8a0ce.firebasestorage.app/o/region_packs%2Fusa_nevada.whami?alt=media",
+    "checksum": "f2260c7fbc261e4ceeb6718e145ec5531d90c5637a4aad775872ebea8782e01f",
+    "sizeBytes": 117655180,
+    "bounds": [
+      35.00053,
+      -120.0074,
+      42.00391,
+      -114.0379
+    ],
+    "trustScore": 90
+  },
+  {
+    "id": "usa_texas",
+    "name": "Texas",
+    "country": "United States",
+    "packType": "Urban",
+    "bundled": false,
+    "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/whami-8a0ce.firebasestorage.app/o/region_packs%2Fusa_texas.whami?alt=media",
+    "checksum": "c194307fb9e4e7802799ecafb427c793362b6aea245df8432849d8dbc0a22b2e",
+    "sizeBytes": 609995496,
+    "bounds": [
+      25.66764,
+      -106.9125,
+      36.52618,
+      -93.01897
+    ],
+    "trustScore": 90
+  }
+]

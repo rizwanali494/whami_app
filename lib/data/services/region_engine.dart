@@ -31,11 +31,29 @@ class RegionEngine {
       throw FileSystemException('Pack file not found', zipFilePath);
     }
 
-    final tempDir = await storage.getTempDirectory();
+    final bytes = await zipFile.readAsBytes();
+    await RegionEngine.extractAndInstall(
+      storage,
+      bytes,
+      onBeforeInstall: (packId) async {
+        // If this pack is currently active, release all resources first.
+        if (isPackActive(packId)) {
+          await deactivatePack();
+        }
+      },
+    );
+  }
 
-    for (final entity in tempDir.listSync()) {
-      debugPrint("Found: ${entity.path}");
-    }
+  /// Extracts a `.whami` ZIP archive's bytes to the shared temp/staging dir,
+  /// verifies its required contents, then atomically moves it into place.
+  /// Shared by [installLocalPack] and [DownloadEngine] so both real-file
+  /// install paths (sideloaded ZIP vs. downloaded ZIP) use the same logic.
+  static Future<RegionMetadata> extractAndInstall(
+    RegionPackStorage storage,
+    List<int> zipBytes, {
+    Future<void> Function(String packId)? onBeforeInstall,
+  }) async {
+    final tempDir = await storage.getTempDirectory();
 
     // Clean temp dir before starting
     if (await tempDir.exists()) {
@@ -44,11 +62,8 @@ class RegionEngine {
     await tempDir.create(recursive: true);
 
     try {
-      debugPrint(
-        '[RegionEngine] Extracting $zipFilePath to ${tempDir.path}...',
-      );
-      final bytes = await zipFile.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
+      debugPrint('[RegionEngine] Extracting pack to ${tempDir.path}...');
+      final archive = ZipDecoder().decodeBytes(zipBytes);
 
       for (final file in archive) {
         final filename = file.name;
@@ -96,14 +111,8 @@ class RegionEngine {
         regionName: meta.name,
       );
 
-      // // If an old version exists, delete it first
-      // if (await finalDir.exists()) {
-      //   await finalDir.delete(recursive: true);
-      // }
-
-      // If this pack is currently active, release all resources first.
-      if (isPackActive(meta.id)) {
-        await deactivatePack();
+      if (onBeforeInstall != null) {
+        await onBeforeInstall(meta.id);
       }
 
       // Remove previous installation if it exists.
@@ -121,8 +130,7 @@ class RegionEngine {
         '[RegionEngine] Successfully installed ${meta.name} (${meta.id})',
       );
 
-      // Auto-activate
-      // await activatePack(meta.id);
+      return meta;
     } catch (e) {
       debugPrint('[RegionEngine] Installation failed: $e');
       // Clean up temp dir on failure
@@ -149,14 +157,14 @@ class RegionEngine {
     }
 
     // 3. Open landmarks.sqlite connection
-    final dbPath = await storage.getLandmarksDbPath(packId);
-    if (dbPath == null) {
-      throw StateError(
-        'Cannot activate pack $packId: landmarks.sqlite missing on disk.',
-      );
-    }
+    // final dbPath = await storage.getLandmarksDbPath(packId);
+    // if (dbPath == null) {
+    //   throw StateError(
+    //     'Cannot activate pack $packId: landmarks.sqlite missing on disk.',
+    //   );
+    // }
 
-    await landmarkDatabase.open(dbPath);
+    // await landmarkDatabase.open(dbPath);
 
     // // 4. Open map.mbtiles connection on the local tile server
     // final mapPath = await storage.getMBTilesPath(packId);

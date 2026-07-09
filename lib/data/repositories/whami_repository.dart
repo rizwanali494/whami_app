@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../core/constants/connectivity_status.dart';
@@ -120,53 +119,21 @@ class WhamiRepository extends ChangeNotifier {
     mapRepository.addListener(notifyListeners);
   }
 
-  /// Initialize and active default pack close to user
+  /// Center the map near the user on boot. No pack is auto-activated —
+  /// regions are only ever activated by explicit user choice on the Region
+  /// Packs screen, so the map starts in raster-basemap mode every launch.
   Future<void> _initDefaultPack() async {
     await _sensors.gpsService.initialize();
     final loc = await _sensors.gpsService.getCurrentPosition();
 
-    String defaultPackId = 'sf_bay';
     if (loc != null) {
-      double minDistance = double.infinity;
-      for (var entry in _packCoordinates.entries) {
-        final lat = entry.value[0];
-        final lon = entry.value[1];
-        final dLat = (lat - loc.latitude) * pi / 180.0;
-        final dLon = (lon - loc.longitude) * pi / 180.0;
-        final a =
-            sin(dLat / 2) * sin(dLat / 2) +
-            cos(loc.latitude * pi / 180.0) *
-                cos(lat * pi / 180.0) *
-                sin(dLon / 2) *
-                sin(dLon / 2);
-        final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-        if (c < minDistance) {
-          minDistance = c;
-          defaultPackId = entry.key;
-        }
-      }
-    }
-
-    // Auto-activate pack if downloaded
-    final isDownloaded = await regionRepository.regionEngine.storage
-        .isPackDownloaded(defaultPackId);
-    if (isDownloaded) {
-      await activateRegionPack(defaultPackId);
+      centerMapOn(loc.latitude, loc.longitude);
     } else {
-      // Find any first downloaded pack as default fallback
-      final installed = await regionRepository.regionEngine.storage
-          .scanInstalledPacks();
-      if (installed.isNotEmpty) {
-        await activateRegionPack(installed.first.id);
-      } else {
-        // Fallback to demo coordinate focus
-        if (_packCoordinates.containsKey(defaultPackId)) {
-          centerMapOn(
-            _packCoordinates[defaultPackId]![0],
-            _packCoordinates[defaultPackId]![1],
-          );
-        }
-      }
+      // No GPS fix yet — center on a neutral default so the map isn't blank.
+      centerMapOn(
+        _packCoordinates['sf_bay']![0],
+        _packCoordinates['sf_bay']![1],
+      );
     }
 
     _eventLog.seedInitialEvents();
@@ -199,6 +166,8 @@ class WhamiRepository extends ChangeNotifier {
 
   // Proxy actions delegated to sub-repositories
   void startDownload(String packId) => regionRepository.startDownload(packId);
+  Future<void> cancelDownload(String packId) =>
+      regionRepository.cancelDownload(packId);
   Future<void> deleteRegionPack(String packId) =>
       regionRepository.deleteRegionPack(packId);
 

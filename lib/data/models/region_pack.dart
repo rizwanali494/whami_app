@@ -26,6 +26,10 @@ class RegionPack {
   // Rich metadata engine backing (optional, populated when downloaded/read)
   final RegionMetadata? metadata;
 
+  // Remote source for packs that aren't downloaded yet (from catalog.json)
+  final String? downloadUrl;
+  final String? checksum;
+
   const RegionPack({
     required this.id,
     required this.name,
@@ -42,6 +46,8 @@ class RegionPack {
     this.fileSizes = const {},
     this.localPath,
     this.metadata,
+    this.downloadUrl,
+    this.checksum,
   });
 
   RegionPack copyWith({
@@ -51,6 +57,8 @@ class RegionPack {
     bool? isDownloading,
     String? localPath,
     RegionMetadata? metadata,
+    String? downloadUrl,
+    String? checksum,
   }) {
     return RegionPack(
       id: id,
@@ -68,6 +76,8 @@ class RegionPack {
       fileSizes: fileSizes,
       localPath: localPath ?? this.localPath,
       metadata: metadata ?? this.metadata,
+      downloadUrl: downloadUrl ?? this.downloadUrl,
+      checksum: checksum ?? this.checksum,
     );
   }
 
@@ -118,6 +128,29 @@ class RegionPack {
       trustScore: meta.trustScore,
       localPath: diskPath,
       metadata: meta,
+    );
+  }
+
+  /// Create a not-yet-downloaded RegionPack from a catalog.json entry
+  factory RegionPack.fromCatalogEntry(Map<String, dynamic> json) {
+    final sizeBytes = json['sizeBytes'] as int? ?? 0;
+    final mb = sizeBytes / (1024 * 1024);
+    final sizeStr = '${mb.toStringAsFixed(1)} MB';
+
+    return RegionPack(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      type: json['packType'] as String? ?? 'Unknown',
+      size: sizeStr,
+      status: 'available',
+      location: json['country'] as String? ?? '',
+      lastUpdated: '',
+      includedData: const ['Land maps', 'SQLite database', 'MBTiles maps'],
+      trustScore: json['trustScore'] as int? ?? 0,
+      localPath: null,
+      metadata: null,
+      downloadUrl: json['downloadUrl'] as String?,
+      checksum: json['checksum'] as String?,
     );
   }
 

@@ -54,9 +54,12 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
+  test: ^1.25.0
 
 flutter:
   uses-material-design: true
   assets:
-    - region_packs/pakistan_lahore/
-    - region_packs/usa_san_francisco/
+    - assets/catalog.json
+

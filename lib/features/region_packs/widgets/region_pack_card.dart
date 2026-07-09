@@ -36,6 +36,118 @@ class RegionPackCard extends StatelessWidget {
     }
   }
 
+  Widget _buildActionArea(bool isActive, Color typeColor) {
+    final isFailed = pack.downloadStage.startsWith('Failed:');
+    if (pack.status == 'downloading') {
+      final stage = pack.downloadStage.isEmpty
+          ? 'Downloading...'
+          : pack.downloadStage;
+      return SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    stage,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  color: AppColors.textSecondary,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => repository.cancelDownload(pack.id),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pack.downloadProgress,
+                backgroundColor: AppColors.divider,
+                valueColor: AlwaysStoppedAnimation<Color>(typeColor),
+                minHeight: 6,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (pack.status == 'available') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isFailed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                pack.downloadStage,
+                style: const TextStyle(fontSize: 11, color: AppColors.gps),
+              ),
+            ),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => repository.startDownload(pack.id),
+              icon: Icon(Icons.download, size: 16, color: typeColor),
+              label: Text(
+                isFailed ? 'Retry Download' : 'Download Pack (${pack.size})',
+                style: TextStyle(color: typeColor),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                side: BorderSide(color: typeColor.withValues(alpha: 0.6)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // status == 'downloaded'
+    return SizedBox(
+      width: double.infinity,
+      child: isActive
+          ? ElevatedButton.icon(
+              onPressed: () => repository.deactivateRegionPack(),
+              icon: const Icon(Icons.radio_button_checked, size: 16),
+              label: const Text('Deactivate Pack'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.trustHigh,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: () => repository.activateRegionPack(pack.id),
+              icon: Icon(Icons.bolt, size: 16, color: typeColor),
+              label: Text('Activate Pack', style: TextStyle(color: typeColor)),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                side: BorderSide(color: typeColor.withValues(alpha: 0.6)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isActive = repository.activePackId == pack.id;
@@ -202,41 +314,8 @@ class RegionPackCard extends StatelessWidget {
 
             const SizedBox(height: 14),
 
-            // ── Activate / Deactivate button ─────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              child: isActive
-                  ? ElevatedButton.icon(
-                      onPressed: () => repository.deactivateRegionPack(),
-                      icon: const Icon(Icons.radio_button_checked, size: 16),
-                      label: const Text('Deactivate Pack'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.trustHigh,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 11),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    )
-                  : OutlinedButton.icon(
-                      onPressed: () => repository.activateRegionPack(pack.id),
-                      icon: Icon(Icons.bolt, size: 16, color: typeColor),
-                      label: Text(
-                        'Activate Pack',
-                        style: TextStyle(color: typeColor),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 11),
-                        side: BorderSide(
-                          color: typeColor.withValues(alpha: 0.6),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-            ),
+            // ── Status-dependent action area ─────────────────────────────
+            _buildActionArea(isActive, typeColor),
           ],
         ),
       ),

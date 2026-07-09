@@ -14,10 +14,7 @@ class RegionRepository extends ChangeNotifier {
   List<RegionPack> get packs => _packs;
   String get activePackId => regionEngine.activePackId ?? '';
 
-  RegionRepository({
-    required this.regionEngine,
-    required this.downloadEngine,
-  }) {
+  RegionRepository({required this.regionEngine, required this.downloadEngine}) {
     _initCatalog();
     _subscribeToDownloads();
   }
@@ -30,8 +27,29 @@ class RegionRepository extends ChangeNotifier {
     // 2. Scan the local documents directory for installed packs
     final discoveredPacks = await regionEngine.storage.scanInstalledPacks();
 
+    // 3. Load the pack catalog (includes packs that aren't downloaded yet)
+    final catalogEntries = await regionEngine.storage.loadCatalog();
+
     _packs.clear();
-    _packs.addAll(discoveredPacks);
+    for (final entry in catalogEntries) {
+      final id = entry['id'] as String;
+      RegionPack? installedPack;
+      for (final p in discoveredPacks) {
+        if (p.id == id) {
+          installedPack = p;
+          break;
+        }
+      }
+      _packs.add(installedPack ?? RegionPack.fromCatalogEntry(entry));
+    }
+
+    // Any installed pack not present in the catalog (e.g. sideloaded .whami)
+    // is still shown.
+    for (final p in discoveredPacks) {
+      if (!_packs.any((x) => x.id == p.id)) {
+        _packs.add(p);
+      }
+    }
 
     notifyListeners();
   }
@@ -52,9 +70,9 @@ class RegionRepository extends ChangeNotifier {
               metadata: meta,
             );
             // If no active pack, activate this one
-            if (activePackId.isEmpty) {
-              activateRegionPack(pack.id);
-            }
+            // if (activePackId.isEmpty) {
+            //   activateRegionPack(pack.id);
+            // }
             notifyListeners();
           });
         } else if (progressEvent.status == 'failed') {
@@ -65,12 +83,21 @@ class RegionRepository extends ChangeNotifier {
             downloadStage: 'Failed: ${progressEvent.error}',
           );
           notifyListeners();
+        } else if (progressEvent.status == 'installing') {
+          _packs[index] = pack.copyWith(
+            status: 'downloading',
+            isDownloading: true,
+            downloadProgress: 1.0,
+            downloadStage: 'Installing...',
+          );
+          notifyListeners();
         } else {
           _packs[index] = pack.copyWith(
             status: 'downloading',
             isDownloading: true,
             downloadProgress: progressEvent.progress,
-            downloadStage: 'Downloading (${(progressEvent.progress * 100).toStringAsFixed(0)}%)',
+            downloadStage:
+                'Downloading (${(progressEvent.progress * 100).toStringAsFixed(0)}%)',
           );
           notifyListeners();
         }
@@ -80,16 +107,25 @@ class RegionRepository extends ChangeNotifier {
 
   Future<void> startDownload(String packId) async {
     final pack = getRegionPackById(packId);
-    if (pack != null && pack.status != 'downloaded') {
+    if (pack != null &&
+        (pack.status == 'available' ||
+            pack.downloadStage.startsWith('Failed:'))) {
       await downloadEngine.startDownload(pack);
     }
+  }
+
+  Future<void> cancelDownload(String packId) async {
+    await downloadEngine.cancelDownload(packId);
   }
 
   Future<void> deleteRegionPack(String packId) async {
     await regionEngine.storage.deletePackFiles(packId);
     final index = _packs.indexWhere((p) => p.id == packId);
     if (index != -1) {
-      _packs[index] = _packs[index].copyWith(status: 'available', metadata: null);
+      _packs[index] = _packs[index].copyWith(
+        status: 'available',
+        metadata: null,
+      );
     }
     if (activePackId == packId) {
       await regionEngine.deactivatePack();
