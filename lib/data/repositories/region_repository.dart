@@ -15,8 +15,28 @@ class RegionRepository extends ChangeNotifier {
   String get activePackId => regionEngine.activePackId ?? '';
 
   RegionRepository({required this.regionEngine, required this.downloadEngine}) {
-    _initCatalog();
+    _init();
     _subscribeToDownloads();
+  }
+
+  Future<void> _init() async {
+    await _initCatalog();
+    await _restoreActivePack();
+  }
+
+  /// Re-activate whichever pack was active when the app was last closed, so
+  /// activation survives a relaunch. Falls back to clearing the persisted
+  /// id if that pack is no longer downloaded (e.g. deleted while offline).
+  Future<void> _restoreActivePack() async {
+    final savedId = await regionEngine.storage.getActivePackId();
+    if (savedId == null) return;
+
+    final downloaded = await regionEngine.storage.isPackDownloaded(savedId);
+    if (downloaded) {
+      await activateRegionPack(savedId);
+    } else {
+      await regionEngine.storage.setActivePackId(null);
+    }
   }
 
   /// Initialize region pack list and cross-check filesystem status
@@ -96,13 +116,36 @@ class RegionRepository extends ChangeNotifier {
             status: 'downloading',
             isDownloading: true,
             downloadProgress: progressEvent.progress,
-            downloadStage:
-                'Downloading (${(progressEvent.progress * 100).toStringAsFixed(0)}%)',
+            downloadStage: _formatDownloadStage(progressEvent),
           );
           notifyListeners();
         }
       }
     });
+  }
+
+  /// Formats a stage string like "12.3 MB / 45.6 MB · 2.1 MB/s · 27%".
+  String _formatDownloadStage(DownloadProgress event) {
+    final percent = (event.progress * 100).clamp(0, 100).toStringAsFixed(0);
+    if (event.totalBytes <= 0) {
+      return 'Downloading ($percent%)';
+    }
+    final received = _formatBytes(event.bytesReceived);
+    final total = _formatBytes(event.totalBytes);
+    final speed = _formatBytes(event.bytesPerSecond.round());
+    return '$received / $total · $speed/s · $percent%';
+  }
+
+  String _formatBytes(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    double value = bytes.toDouble();
+    var unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+    final decimals = unitIndex == 0 ? 0 : 1;
+    return '${value.toStringAsFixed(decimals)} ${units[unitIndex]}';
   }
 
   Future<void> startDownload(String packId) async {

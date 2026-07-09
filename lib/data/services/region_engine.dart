@@ -185,6 +185,7 @@ class RegionEngine {
 
     final packDir = await storage.getPackDirectory(packId);
     _activeRegionPack = RegionPack.fromMetadata(meta, packDir.path);
+    await storage.setActivePackId(packId);
 
     debugPrint('[RegionEngine] Activated pack: $packId (${meta.name})');
   }
@@ -201,6 +202,7 @@ class RegionEngine {
     // Close map.mbtiles connection on local tile server
     await tileServer.setActiveMBTiles(null);
 
+    await storage.setActivePackId(null);
     _activeRegionPack = null;
   }
 

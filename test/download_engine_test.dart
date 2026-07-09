@@ -116,6 +116,34 @@ Future<HttpServer> _serveRangeAware(
   return server;
 }
 
+/// Serves [bytes] in small delayed chunks so a test can cancel mid-transfer
+/// and observe that cancellation interrupts the stream rather than waiting
+/// for it to finish on its own.
+Future<HttpServer> _serveSlowly(
+  Uint8List bytes, {
+  int chunkSize = 4096,
+  Duration delay = const Duration(milliseconds: 20),
+}) async {
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  server.listen((request) async {
+    request.response.statusCode = HttpStatus.ok;
+    request.response.headers.contentLength = bytes.length;
+    try {
+      for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+        final end =
+            (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
+        request.response.add(bytes.sublist(offset, end));
+        await request.response.flush();
+        await Future.delayed(delay);
+      }
+      await request.response.close();
+    } catch (_) {
+      // Client disconnected (e.g. cancelled) — nothing further to do.
+    }
+  });
+  return server;
+}
+
 /// Subscribes before starting the download so no event is missed, and
 /// returns the first terminal (completed/failed) progress event. Waiting
 /// on the broadcast stream directly (instead of just inspecting the last
@@ -227,6 +255,50 @@ void main() {
 
     final stagingDir = await storage.getDownloadStagingDirectory();
     final partFile = File('${stagingDir.path}/dl_test_badsum.whami.part');
+    expect(await partFile.exists(), isFalse);
+  });
+
+  test('cancelling a download interrupts it immediately', () async {
+    final fixture = _buildFixtureZip('dl_test_cancel', mapBytesLength: 2000000);
+    final checksum = sha256.convert(fixture).toString();
+    // Slow enough that a full transfer would take ~10s — cancelling after
+    // 100ms only makes sense if it actually interrupts the stream rather
+    // than letting it run to completion in the background.
+    final server = await _serveSlowly(fixture);
+    addTearDown(server.close);
+
+    final storage = RegionPackStorage();
+    final engine = DownloadEngine(storage: storage);
+    addTearDown(engine.dispose);
+
+    final pack = _catalogPack(
+      id: 'dl_test_cancel',
+      downloadUrl: 'http://${server.address.address}:${server.port}/pack.whami',
+      checksum: checksum,
+    );
+
+    final events = <DownloadProgress>[];
+    final sub = engine.progressStream.listen(events.add);
+    addTearDown(sub.cancel);
+
+    final downloadFuture = engine.startDownload(pack);
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    final stopwatch = Stopwatch()..start();
+    await engine.cancelDownload('dl_test_cancel');
+    await downloadFuture.timeout(const Duration(seconds: 2));
+    stopwatch.stop();
+
+    // Far below the ~10s a full slow transfer would take — proves the
+    // cancel interrupted the stream instead of waiting it out.
+    expect(stopwatch.elapsedMilliseconds, lessThan(1500));
+
+    final terminalEvents = events.where((e) => e.status == 'failed').toList();
+    expect(terminalEvents.length, 1);
+    expect(terminalEvents.single.error, 'Cancelled');
+
+    final stagingDir = await storage.getDownloadStagingDirectory();
+    final partFile = File('${stagingDir.path}/dl_test_cancel.whami.part');
     expect(await partFile.exists(), isFalse);
   });
 }

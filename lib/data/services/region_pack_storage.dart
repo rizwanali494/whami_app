@@ -61,6 +61,41 @@ class RegionPackStorage {
     return dir;
   }
 
+  /// File that remembers which pack was last activated, so it can be
+  /// restored on the next app launch.
+  Future<File> get _activePackFile async {
+    final rootDir = await _packsDirectory;
+    return File('${rootDir.path}/active_pack.txt');
+  }
+
+  /// Read the persisted active pack id, or null if none is set.
+  Future<String?> getActivePackId() async {
+    try {
+      final file = await _activePackFile;
+      if (await file.exists()) {
+        final id = (await file.readAsString()).trim();
+        return id.isEmpty ? null : id;
+      }
+    } catch (e) {
+      debugPrint('[RegionPackStorage] Failed to read active pack id: $e');
+    }
+    return null;
+  }
+
+  /// Persist the active pack id (or clear it when [packId] is null).
+  Future<void> setActivePackId(String? packId) async {
+    try {
+      final file = await _activePackFile;
+      if (packId == null) {
+        if (await file.exists()) await file.delete();
+      } else {
+        await file.writeAsString(packId);
+      }
+    } catch (e) {
+      debugPrint('[RegionPackStorage] Failed to persist active pack id: $e');
+    }
+  }
+
   /// Load pack metadata/manifest from disk
   Future<RegionMetadata?> getPackMetadata(String packId) async {
     try {

@@ -12,18 +12,30 @@ class DownloadProgress {
   final double progress; // 0.0 to 1.0
   final String status; // downloading, installing, completed, failed
   final String? error;
+  final int bytesReceived;
+  final int totalBytes;
+  final double bytesPerSecond;
 
   const DownloadProgress({
     required this.packId,
     required this.progress,
     required this.status,
     this.error,
+    this.bytesReceived = 0,
+    this.totalBytes = 0,
+    this.bytesPerSecond = 0.0,
   });
 }
+
+class _CancelledException implements Exception {}
 
 class DownloadEngine {
   final RegionPackStorage storage;
   final _controller = StreamController<DownloadProgress>.broadcast();
+
+  // Lets cancelDownload() interrupt an in-flight download instantly rather
+  // than waiting for the current network chunk/stream to finish on its own.
+  final Map<String, void Function()> _activeCancellers = {};
 
   Stream<DownloadProgress> get progressStream => _controller.stream;
 
@@ -54,6 +66,14 @@ class DownloadEngine {
 
     final partFile = await _partFile(packId);
     final client = http.Client();
+    StreamSubscription<List<int>>? subscription;
+    final completer = Completer<void>();
+    IOSink? sink;
+
+    _activeCancellers[packId] = () {
+      subscription?.cancel();
+      if (!completer.isCompleted) completer.completeError(_CancelledException());
+    };
 
     try {
       int downloaded = await partFile.exists() ? await partFile.length() : 0;
@@ -79,26 +99,49 @@ class DownloadEngine {
       }
 
       final total = (response.contentLength ?? 0) + downloaded;
-      final sink = partFile.openWrite(
-        mode: resuming ? FileMode.append : FileMode.write,
+      sink = partFile.openWrite(mode: resuming ? FileMode.append : FileMode.write);
+
+      final stopwatch = Stopwatch()..start();
+      var lastEmitMs = 0;
+      var bytesAtLastEmit = downloaded;
+
+      subscription = response.stream.listen(
+        (chunk) {
+          sink!.add(chunk);
+          downloaded += chunk.length;
+
+          // Throttle progress/speed emission so fast connections don't
+          // flood the UI with an event per chunk.
+          final nowMs = stopwatch.elapsedMilliseconds;
+          final elapsedMs = nowMs - lastEmitMs;
+          if (elapsedMs >= 200) {
+            final speed = elapsedMs > 0
+                ? (downloaded - bytesAtLastEmit) * 1000 / elapsedMs
+                : 0.0;
+            _controller.add(DownloadProgress(
+              packId: packId,
+              progress: total > 0 ? (downloaded / total).clamp(0.0, 1.0) : 0.0,
+              status: 'downloading',
+              bytesReceived: downloaded,
+              totalBytes: total,
+              bytesPerSecond: speed,
+            ));
+            lastEmitMs = nowMs;
+            bytesAtLastEmit = downloaded;
+          }
+        },
+        onDone: () {
+          if (!completer.isCompleted) completer.complete();
+        },
+        onError: (Object e, StackTrace st) {
+          if (!completer.isCompleted) completer.completeError(e, st);
+        },
+        cancelOnError: true,
       );
 
-      try {
-        await for (final chunk in response.stream) {
-          sink.add(chunk);
-          downloaded += chunk.length;
-          _controller.add(DownloadProgress(
-            packId: packId,
-            progress: total > 0 ? (downloaded / total).clamp(0.0, 1.0) : 0.0,
-            status: 'downloading',
-          ));
-        }
-      } finally {
-        // Always flush/close so bytes received before a stream error are
-        // persisted to disk — the .part file must reflect what was actually
-        // written for a subsequent resume to work correctly.
-        await sink.close();
-      }
+      await completer.future;
+      await sink.close();
+      sink = null;
 
       // Verify checksum
       final bytes = await partFile.readAsBytes();
@@ -110,15 +153,38 @@ class DownloadEngine {
         throw const FormatException('Checksum verification failed. File corrupt or tampered.');
       }
 
-      _controller.add(DownloadProgress(packId: packId, progress: 1.0, status: 'installing'));
+      _controller.add(DownloadProgress(
+        packId: packId,
+        progress: 1.0,
+        status: 'installing',
+        bytesReceived: downloaded,
+        totalBytes: total,
+      ));
 
       await RegionEngine.extractAndInstall(storage, bytes);
       await partFile.delete();
 
-      _controller.add(DownloadProgress(packId: packId, progress: 1.0, status: 'completed'));
+      _controller.add(DownloadProgress(
+        packId: packId,
+        progress: 1.0,
+        status: 'completed',
+        bytesReceived: downloaded,
+        totalBytes: total,
+      ));
     } catch (e) {
-      // Network hiccups leave the .part file in place so a retry can resume;
-      // only checksum failures delete it (handled above).
+      // Always flush/close so bytes received before an error are persisted
+      // to disk — the .part file must reflect what was actually written for
+      // a subsequent resume to work correctly.
+      await sink?.close();
+
+      if (e is _CancelledException) {
+        // cancelDownload() already emitted the user-facing "Cancelled"
+        // event and owns deleting the partial file — nothing more to do.
+        return;
+      }
+
+      // Network hiccups otherwise leave the .part file in place so a retry
+      // can resume; only checksum failures delete it (handled above).
       debugPrint('[DownloadEngine] Download failed for $packId: $e');
       _controller.add(DownloadProgress(
         packId: packId,
@@ -128,11 +194,16 @@ class DownloadEngine {
       ));
     } finally {
       client.close();
+      _activeCancellers.remove(packId);
     }
   }
 
-  /// Cancels an in-progress download and discards any partial data.
+  /// Cancels an in-progress download instantly (interrupts the network
+  /// stream rather than waiting for it to finish) and discards any partial
+  /// data.
   Future<void> cancelDownload(String packId) async {
+    _activeCancellers[packId]?.call();
+
     final partFile = await _partFile(packId);
     if (await partFile.exists()) {
       await partFile.delete();
