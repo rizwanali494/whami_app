@@ -7,6 +7,7 @@ import '../../../core/constants/connectivity_status.dart';
 import '../../../data/models/position_opinion.dart';
 import '../../../data/models/landmark.dart';
 import '../../../data/repositories/whami_repository.dart';
+import '../../../data/services/maplibre_connectivity_service.dart';
 import '../services/map_engine.dart';
 
 class WhamiMapView extends StatefulWidget {
@@ -32,6 +33,24 @@ class _WhamiMapViewState extends State<WhamiMapView>
   bool _isUserPanning = false;
   late final AnimationController _pulseController;
 
+  // The style passed to MapLibreMap must stay referentially/textually
+  // stable across rebuilds: the maplibre_gl plugin diffs `styleString` as
+  // part of its native options sync on every widget rebuild (not just via
+  // our own _onActivePackChanged()/setStyle() calls), and force-reloads
+  // the entire native style whenever it changes — wiping dynamically-added
+  // layers outside our control. Recomputing it fresh in build() meant ANY
+  // rebuild (e.g. a connectivity change, or the 5Hz+ position-tracking
+  // notifyListeners() storm) could silently blank the map. So it's
+  // computed once and only ever updated explicitly via setStyle().
+  late String _styleString;
+
+  // Last-applied values that drove the current style, used to detect real
+  // changes in didUpdateWidget. Comparing widget.repository.X directly to
+  // oldWidget.repository.X doesn't work here — both sides are the exact
+  // same shared repository instance, so that comparison is always false.
+  String _lastActivePackId = '';
+  bool _lastIsOffline = false;
+
   // High-level MapEngine managing nested render pipelines
   final MapEngine _mapEngine = MapEngine();
 
@@ -40,6 +59,20 @@ class _WhamiMapViewState extends State<WhamiMapView>
 
   // Track whether a camera-idle refresh is in flight to prevent overlapping
   bool _isRefreshingCameraViewport = false;
+
+  // Track whether pack layers are currently being (re)added to prevent
+  // overlapping calls. onStyleLoadedCallback is driven by the native SDK
+  // and can fire more than once for what's logically a single style load;
+  // without this guard, two overlapping _loadPackLayers() calls can each
+  // try to add the same named layer (setupLayers()'s own remove-then-add
+  // step only protects against sequential re-calls, not truly concurrent
+  // ones), which the native side rejects as "layer already exists".
+  bool _isLoadingPackLayers = false;
+
+  // Same reentrancy protection as _isLoadingPackLayers, for the base map
+  // layers (roads/water/buildings/labels or raster fallback) added via
+  // LayerEngine.setupBaseMapLayers().
+  bool _isLoadingBaseMapLayers = false;
 
   // Whether we've already zoomed the camera in for the current tracking
   // session once a live GPS fix was confirmed (vs. sitting at the far-out
@@ -53,6 +86,24 @@ class _WhamiMapViewState extends State<WhamiMapView>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
+
+    _lastActivePackId = widget.repository.activePackId;
+    _lastIsOffline =
+        widget.repository.connectivityMode == ConnectivityMode.offline;
+    _styleString = jsonEncode(_buildStyleJson());
+  }
+
+  Map<String, dynamic> _buildStyleJson() {
+    final activePack = widget.repository.activeRegionPack;
+    final isOffline =
+        widget.repository.connectivityMode == ConnectivityMode.offline;
+    final localMBTilesUrl = activePack != null
+        ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
+        : null;
+    return _mapEngine.tile.generateStyle(
+      isOffline: isOffline,
+      localMBTilesUrl: localMBTilesUrl,
+    );
   }
 
   @override
@@ -66,6 +117,12 @@ class _WhamiMapViewState extends State<WhamiMapView>
     _controller = controller;
     _mapEngine.attach(controller);
 
+    // Re-assert this on every map view creation — MapLibre Native
+    // (re-)activates its own connectivity receiver around map view init,
+    // which can overwrite the one-time override set at engine startup
+    // (MainActivity.kt) with the real (possibly offline) OS state.
+    await MapLibreConnectivityService.forceConnected();
+
     if (widget.repository.activePackId.isEmpty) {
       final gps = widget.repository.sensors.gpsService;
       await gps.initialize();
@@ -74,10 +131,19 @@ class _WhamiMapViewState extends State<WhamiMapView>
         _mapEngine.camera.centerOn(pos.latitude, pos.longitude, zoom: 12.5);
       }
     }
+
+    // Re-sync now that the native map view actually exists — a pack can
+    // already be active by this point (e.g. restored from a previous
+    // session before the platform view finished initializing).
+    // _onActivePackChanged() no-ops if called before _controller is set,
+    // so nothing else would ever apply the correct style without this.
+    await _onActivePackChanged();
   }
 
   void _onStyleLoaded() async {
     if (!mounted) return;
+    // Base map first (roads/water/buildings sit below the overlays).
+    await _loadBaseMapLayers();
     await _loadPackLayers();
     if (_packLoaded) {
       await _mapEngine.layer.updateVisibility(widget.layerVisibility);
@@ -85,8 +151,36 @@ class _WhamiMapViewState extends State<WhamiMapView>
     }
   }
 
-  void _onActivePackChanged() async {
+  /// Adds the base map (roads/water/buildings/labels, or the raster
+  /// fallback) via the imperative controller API. Must be called after
+  /// every style (re)load, since setStyle() tears down and replaces the
+  /// whole native style, wiping anything added imperatively before it.
+  Future<void> _loadBaseMapLayers() async {
     if (_controller == null) return;
+    if (_isLoadingBaseMapLayers) return;
+    _isLoadingBaseMapLayers = true;
+    try {
+      final activePack = widget.repository.activeRegionPack;
+      final isOffline =
+          widget.repository.connectivityMode == ConnectivityMode.offline;
+      final localMBTilesUrl = activePack != null
+          ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
+          : null;
+      await _mapEngine.layer.setupBaseMapLayers(
+        isOffline: isOffline,
+        localMBTilesUrl: localMBTilesUrl,
+      );
+    } catch (e) {
+      debugPrint('Error loading base map layers: $e');
+    } finally {
+      _isLoadingBaseMapLayers = false;
+    }
+  }
+
+  Future<void> _onActivePackChanged() async {
+    if (_controller == null) {
+      return;
+    }
 
     final packId = widget.repository.activePackId;
     final isOffline =
@@ -97,35 +191,20 @@ class _WhamiMapViewState extends State<WhamiMapView>
         _packLoaded = false;
       });
       await _mapEngine.layer.clearLayers();
-      final styleJson = _mapEngine.tile.generateStyle(
-        isOffline: isOffline,
-        localMBTilesUrl: null,
-      );
-      try {
-        await _controller!.setStyle(jsonEncode(styleJson));
-      } catch (e) {
-        debugPrint('Error resetting map style: $e');
-      }
-      return;
     }
-
-    final activePack = widget.repository.getRegionPackById(packId);
-    final localMBTilesUrl = activePack != null
-        ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
-        : null;
-
-    final styleJson = _mapEngine.tile.generateStyle(
-      isOffline: isOffline,
-      localMBTilesUrl: localMBTilesUrl,
-    );
 
     // Centering is now handled by WhamiRepository to ensure tracking is disabled
 
+    final styleJson = _buildStyleJson();
     try {
       await _controller!.setStyle(jsonEncode(styleJson));
+      _styleString = jsonEncode(styleJson);
     } catch (e) {
       debugPrint('Error loading map style on pack activation: $e');
     }
+
+    _lastActivePackId = packId;
+    _lastIsOffline = isOffline;
   }
 
   /// Triggered once the camera settles (not on every intermediate move frame).
@@ -186,7 +265,15 @@ class _WhamiMapViewState extends State<WhamiMapView>
       _hasZoomedForGpsConfirmation = false;
     }
 
-    if (widget.repository.activePackId != oldWidget.repository.activePackId) {
+    // NOTE: widget.repository and oldWidget.repository are the exact same
+    // shared singleton instance, so comparing fields directly between them
+    // always reads the same (current) value on both sides. The real
+    // previous state is tracked separately in _lastActivePackId/_lastIsOffline.
+    final currentPackId = widget.repository.activePackId;
+    final currentIsOffline =
+        widget.repository.connectivityMode == ConnectivityMode.offline;
+
+    if (currentPackId != _lastActivePackId || currentIsOffline != _lastIsOffline) {
       _onActivePackChanged();
     } else if (_packLoaded) {
       _mapEngine.layer.updateVisibility(widget.layerVisibility);
@@ -242,17 +329,22 @@ class _WhamiMapViewState extends State<WhamiMapView>
 
   Future<void> _loadPackLayers() async {
     if (_controller == null) return;
-
-    final packId = widget.repository.activePackId;
-    if (packId.isEmpty) {
-      setState(() {
-        _packLoaded = false;
-      });
-      await _mapEngine.layer.clearLayers();
-      return;
-    }
+    // onStyleLoadedCallback can fire more than once for one logical style
+    // load; a second overlapping call here is redundant, not new
+    // information, so it's simply dropped rather than queued/retried.
+    if (_isLoadingPackLayers) return;
+    _isLoadingPackLayers = true;
 
     try {
+      final packId = widget.repository.activePackId;
+      if (packId.isEmpty) {
+        setState(() {
+          _packLoaded = false;
+        });
+        await _mapEngine.layer.clearLayers();
+        return;
+      }
+
       // Feed local SQLite landmarks inside current view
       final bounds = await _controller!.getVisibleRegion();
       final visible = await widget.repository.landmarkRepository
@@ -282,6 +374,8 @@ class _WhamiMapViewState extends State<WhamiMapView>
       _mapEngine.layer.updateVisibility(widget.layerVisibility);
     } catch (e) {
       debugPrint('Error loading maplibre layers: $e');
+    } finally {
+      _isLoadingPackLayers = false;
     }
   }
 
@@ -336,19 +430,6 @@ class _WhamiMapViewState extends State<WhamiMapView>
       }
     }
 
-    final isOffline =
-        widget.repository.connectivityMode == ConnectivityMode.offline;
-
-    // Mount style sheet through tile engine
-    final localMBTilesUrl = activePack != null
-        ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
-        : null;
-
-    final styleJson = _mapEngine.tile.generateStyle(
-      isOffline: isOffline,
-      localMBTilesUrl: localMBTilesUrl,
-    );
-
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -374,7 +455,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
             onMapCreated: _onMapCreated,
             onStyleLoadedCallback: _onStyleLoaded,
             onCameraIdle: _onMapCameraChanged,
-            styleString: jsonEncode(styleJson),
+            styleString: _styleString,
             myLocationEnabled: true,
             myLocationTrackingMode: MyLocationTrackingMode.tracking,
             zoomGesturesEnabled: true,

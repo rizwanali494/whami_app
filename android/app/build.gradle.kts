@@ -42,3 +42,12 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Compile-only: the maplibre_gl plugin already brings this SDK onto the
+    // runtime classpath transitively. This just makes its classes (used to
+    // force MapLibre Native to always attempt requests to our local
+    // loopback tile server, see MainActivity.kt) visible for compilation
+    // without pulling in a second, possibly conflicting copy at runtime.
+    compileOnly("org.maplibre.gl:android-sdk:11.0.0")
+}

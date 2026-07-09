@@ -104,13 +104,19 @@ class MBTilesTileServer {
         if (tileData != null && tileData.isNotEmpty) {
           // Detect format from header bytes
           String mime = 'image/png'; // default
+          List<int> bodyBytes = tileData;
           if (tileData.length > 2) {
             if (tileData[0] == 0xFF && tileData[1] == 0xD8) {
               mime = 'image/jpeg';
             } else if (tileData[0] == 0x1F && tileData[1] == 0x8B) {
-              // gzip compressed, usually vector tiles (mvt/pbf)
+              // gzip compressed vector tile (mvt/pbf). Decompress here
+              // rather than setting Content-Encoding: gzip and relying on
+              // the HTTP client to auto-decompress — MapLibre Native's tile
+              // fetcher does not reliably honor that header, and would
+              // otherwise try to parse raw gzip bytes as protobuf, which
+              // fails silently per-tile (no error, tile just never renders).
               mime = 'application/x-protobuf';
-              response.headers.set('Content-Encoding', 'gzip');
+              bodyBytes = gzip.decode(tileData);
             } else if (tileData[0] == 0x52 &&
                 tileData[1] == 0x49 &&
                 tileData[2] == 0x46 &&
@@ -124,10 +130,11 @@ class MBTilesTileServer {
           response.headers.set('Cache-Control', 'max-age=3600');
           // Add CORS just in case MapLibre checks it internally on some platforms
           response.headers.set('Access-Control-Allow-Origin', '*');
-          response.add(tileData);
+          response.add(bodyBytes);
           await response.close();
           debugPrint(
-            '[MBTilesTileServer] Served $path as $mime (${tileData.length} bytes)',
+            '[MBTilesTileServer] Served $path as $mime (${bodyBytes.length} bytes, '
+            'source ${tileData.length} bytes)',
           );
           return;
         }

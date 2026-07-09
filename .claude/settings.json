@@ -22,7 +22,12 @@
       "Bash(python3 -c ' *)",
       "Bash(git stash *)",
       "Bash(flutter test *)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(flutter run *)",
+      "Bash(tee /private/tmp/claude-502/-Users-mc-Development-whami-app/9fea37e9-d942-491c-a4e5-8c5b27bb6bc8/scratchpad/run_log3.txt)",
+      "Bash(adb -s 138207053H005258 shell input swipe 700 1000 200 500 200)",
+      "Bash(adb -s 138207053H005258 shell input tap 540 900)",
+      "Bash(adb -s 138207053H005258 exec-out screencap -p)"
     ]
   }
 }

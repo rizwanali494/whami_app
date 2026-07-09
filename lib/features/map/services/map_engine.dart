@@ -4,770 +4,39 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/position_opinion.dart';
 
 class TileEngine {
-  /// Generate MapLibre Style JSON using offline vector tiles or online raster.
-  ///
-  /// When [localMBTilesUrl] is provided (e.g. 'http://127.0.0.1:52341'), the
-  /// style points to the local MBTiles tile server and renders a complete
-  /// offline map with roads, buildings, water, parks, and POIs using the
-  /// OpenMapTiles schema.
-  ///
-  /// When [localMBTilesUrl] is null/empty and [isOffline] is false, falls back
-  /// to CartoDB raster tiles. When offline with no local pack, shows only the
-  /// solid background colour.
+  /// Generate the base MapLibre style JSON. This now contains only the
+  /// background layer — every real source/layer (vector base map, raster
+  /// fallback, overlay layers) is added imperatively via the controller API
+  /// in LayerEngine after the style loads. See LayerEngine.setupBaseMapLayers
+  /// for why: embedding sources/layers directly in this JSON string does not
+  /// reliably render for a custom local vector source in this maplibre_gl
+  /// version, confirmed via direct device testing.
   Map<String, dynamic> generateStyle({
     required bool isOffline,
     String? localMBTilesUrl,
   }) {
-    final hasLocalTiles = localMBTilesUrl != null && localMBTilesUrl.isNotEmpty;
-
-    // ── Sources ─────────────────────────────────────────────────────────────
-    final Map<String, dynamic> sources = {};
-
-    if (hasLocalTiles) {
-      sources['openmaptiles'] = {
-        'type': 'vector',
-        'tiles': ['$localMBTilesUrl/{z}/{x}/{y}.pbf'],
-        'minzoom': 0,
-        'maxzoom': 14,
-      };
-    } else if (!isOffline) {
-      sources['open-tiles'] = {
-        'type': 'raster',
-        'tiles': [
-          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-        ],
-        'tileSize': 256,
-        'attribution': '© OpenStreetMap, © CartoDB',
-      };
-    }
-
-    // ── Layers ───────────────────────────────────────────────────────────────
-    final List<Map<String, dynamic>> layers = [];
-
-    // 1. Background — always present
-    layers.add({
-      'id': 'background',
-      'type': 'background',
-      'paint': {'background-color': '#F2EFE9'},
-    });
-
-    if (hasLocalTiles) {
-      // ── Full OpenMapTiles vector layers ──────────────────────────────────
-
-      // 2. Water bodies
-      layers.add({
-        'id': 'water',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'water',
-        'paint': {'fill-color': '#A8D1E7', 'fill-opacity': 0.9},
-      });
-
-      // 3. Waterways (rivers, canals, streams)
-      layers.add({
-        'id': 'waterway',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'waterway',
-        'paint': {
-          'line-color': '#7EC8E3',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            8,
-            0.5,
-            12,
-            2.0,
-            14,
-            3.0,
-          ],
-        },
-      });
-
-      // 4. Land cover — grass & wood
-      layers.add({
-        'id': 'landcover-grass',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'landcover',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'grass',
-        ],
-        'paint': {'fill-color': '#D4EDBC', 'fill-opacity': 0.8},
-      });
-      layers.add({
-        'id': 'landcover-wood',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'landcover',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'wood',
-        ],
-        'paint': {'fill-color': '#BDDFAD', 'fill-opacity': 0.75},
-      });
-
-      // 5. Landuse zones
-      layers.add({
-        'id': 'landuse-park',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'landuse',
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['park', 'pitch', 'recreation_ground', 'garden'],
-          ],
-        ],
-        'paint': {'fill-color': '#C8E6C0', 'fill-opacity': 0.85},
-      });
-      layers.add({
-        'id': 'landuse-residential',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'landuse',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'residential',
-        ],
-        'paint': {'fill-color': '#EBEBEB', 'fill-opacity': 0.6},
-      });
-      layers.add({
-        'id': 'landuse-commercial',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'landuse',
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['commercial', 'retail', 'industrial'],
-          ],
-        ],
-        'paint': {'fill-color': '#F5DEB3', 'fill-opacity': 0.5},
-      });
-
-      // 6. Park fill
-      layers.add({
-        'id': 'park-fill',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'park',
-        'paint': {'fill-color': '#C8E6C0', 'fill-opacity': 0.7},
-      });
-
-      // 7. Buildings
-      layers.add({
-        'id': 'building',
-        'type': 'fill',
-        'source': 'openmaptiles',
-        'source-layer': 'building',
-        'minzoom': 13,
-        'paint': {
-          'fill-color': '#D9C9B5',
-          'fill-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            13,
-            0.4,
-            15,
-            0.9,
-          ],
-          'fill-outline-color': '#C4A882',
-        },
-      });
-
-      // 8. Road casings (drawn first so fills appear on top)
-      layers.add({
-        'id': 'road-motorway-casing',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'motorway',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#D4820A',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            5,
-            2.0,
-            10,
-            6.0,
-            14,
-            10.0,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-trunk-casing',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'trunk',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#C9A000',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            6,
-            1.5,
-            10,
-            5.5,
-            14,
-            9.0,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-primary-casing',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'primary',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#BBBBBB',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            7,
-            1.5,
-            10,
-            5.0,
-            14,
-            8.5,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-secondary-casing',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['secondary', 'tertiary'],
-          ],
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#C4C4C4',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            9,
-            1.0,
-            12,
-            4.0,
-            14,
-            7.0,
-          ],
-        },
-      });
-
-      // 9. Road fills
-      layers.add({
-        'id': 'road-motorway',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'motorway',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#FFA726',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            5,
-            1.0,
-            10,
-            4.0,
-            14,
-            7.0,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-trunk',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'trunk',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#FFD54F',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            6,
-            1.0,
-            10,
-            3.5,
-            14,
-            6.5,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-primary',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'primary',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#FFFFFF',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            7,
-            0.8,
-            10,
-            3.0,
-            14,
-            6.0,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-secondary',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'secondary',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#FFFFFF',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            9,
-            0.6,
-            12,
-            2.5,
-            14,
-            5.0,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-tertiary',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          '==',
-          ['get', 'class'],
-          'tertiary',
-        ],
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#F5F5F5',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            10,
-            0.4,
-            12,
-            2.0,
-            14,
-            4.0,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-minor',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['minor', 'service', 'track'],
-          ],
-        ],
-        'minzoom': 12,
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#EEEEEE',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            12,
-            0.3,
-            14,
-            2.0,
-          ],
-        },
-      });
-      layers.add({
-        'id': 'road-path',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation',
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['path', 'pedestrian', 'cycleway'],
-          ],
-        ],
-        'minzoom': 13,
-        'layout': {'line-cap': 'round', 'line-join': 'round'},
-        'paint': {
-          'line-color': '#C8B89A',
-          'line-width': 1.0,
-          'line-dasharray': [2, 2],
-        },
-      });
-
-      // 10. Admin boundaries
-      layers.add({
-        'id': 'boundary-country',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'boundary',
-        'filter': [
-          '==',
-          ['get', 'admin_level'],
-          2,
-        ],
-        'paint': {
-          'line-color': '#9E9E9E',
-          'line-width': 1.5,
-          'line-dasharray': [4, 3],
-        },
-      });
-      layers.add({
-        'id': 'boundary-state',
-        'type': 'line',
-        'source': 'openmaptiles',
-        'source-layer': 'boundary',
-        'filter': [
-          '==',
-          ['get', 'admin_level'],
-          4,
-        ],
-        'minzoom': 6,
-        'paint': {
-          'line-color': '#BDBDBD',
-          'line-width': 1.0,
-          'line-dasharray': [3, 3],
-        },
-      });
-
-      // 11. Road name labels
-      layers.add({
-        'id': 'road-name',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'transportation_name',
-        'minzoom': 12,
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': 10,
-          'symbol-placement': 'line',
-          'text-max-angle': 30,
-        },
-        'paint': {
-          'text-color': '#555555',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 1.5,
-        },
-      });
-
-      // 12. Water name labels
-      layers.add({
-        'id': 'water-name',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'water_name',
-        'minzoom': 10,
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': 11,
-          'symbol-placement': 'point',
-        },
-        'paint': {
-          'text-color': '#3A7FC1',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 1.5,
-        },
-      });
-
-      // 13. Waterway name labels
-      layers.add({
-        'id': 'waterway-name',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'waterway',
-        'minzoom': 13,
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': 10,
-          'symbol-placement': 'line',
-        },
-        'paint': {
-          'text-color': '#3A7FC1',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 1.5,
-        },
-      });
-
-      // 14. Park name labels
-      layers.add({
-        'id': 'park-name',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'park',
-        'minzoom': 12,
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': 11,
-          'symbol-placement': 'point',
-        },
-        'paint': {
-          'text-color': '#2E7D32',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 1.5,
-        },
-      });
-
-      // 15. POI labels
-      layers.add({
-        'id': 'poi-label',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'poi',
-        'minzoom': 14,
-        'filter': [
-          '<=',
-          ['get', 'rank'],
-          3,
-        ],
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': 11,
-          'text-max-width': 8,
-          'text-anchor': 'top',
-          'text-offset': [0, 0.5],
-        },
-        'paint': {
-          'text-color': '#333333',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 1.5,
-        },
-      });
-
-      // 16. Place labels — suburbs & neighbourhoods
-      layers.add({
-        'id': 'place-suburb',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'place',
-        'minzoom': 11,
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['suburb', 'neighbourhood', 'quarter'],
-          ],
-        ],
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': 12,
-          'text-transform': 'uppercase',
-          'text-letter-spacing': 0.1,
-        },
-        'paint': {
-          'text-color': '#757575',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 1.5,
-        },
-      });
-
-      // 17. Place labels — towns & villages
-      layers.add({
-        'id': 'place-town',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'place',
-        'minzoom': 8,
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['village', 'town'],
-          ],
-        ],
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            8,
-            11,
-            12,
-            14,
-          ],
-        },
-        'paint': {
-          'text-color': '#333333',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 2.0,
-        },
-      });
-
-      // 18. Place labels — cities
-      layers.add({
-        'id': 'place-city',
-        'type': 'symbol',
-        'source': 'openmaptiles',
-        'source-layer': 'place',
-        'minzoom': 4,
-        'filter': [
-          'in',
-          ['get', 'class'],
-          [
-            'literal',
-            ['city', 'capital'],
-          ],
-        ],
-        'layout': {
-          'text-field': [
-            'coalesce',
-            ['get', 'name:en'],
-            ['get', 'name'],
-          ],
-          'text-size': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            4,
-            10,
-            8,
-            16,
-            12,
-            20,
-          ],
-        },
-        'paint': {
-          'text-color': '#1A1A1A',
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 2.5,
-        },
-      });
-    } else if (!isOffline) {
-      // Online CartoDB raster fallback (no local pack loaded)
-      layers.add({
-        'id': 'base-tiles',
-        'type': 'raster',
-        'source': 'open-tiles',
-        'minzoom': 0,
-        'maxzoom': 14,
-      });
-    }
-    // else: offline + no pack → only background layer (already added above)
-
     return {
       'version': 8,
       'name': 'WHAMI Offline Vector',
-      // Use MapLibre demo glyphs for text labels (online). In a future update,
+      'sources': <String, dynamic>{},
+      'layers': [
+        {
+          'id': 'background',
+          'type': 'background',
+          'paint': {'background-color': '#F2EFE9'},
+        },
+      ],
+      // Use MapLibre demo glyphs for text labels — online only. Referencing
+      // this URL while offline can make MapLibre GL Native fail loading the
+      // *entire* style (not just labels), so it's omitted offline; symbol
+      // layers just render without text in that case. In a future update,
       // bundle Noto Sans PBFs in assets/ for fully-offline label rendering.
-      'glyphs': 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-      'sources': sources,
-      'layers': layers,
+      if (!isOffline)
+        'glyphs': 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
     };
   }
 }
+
 
 class LayerEngine {
   MapLibreMapController? _controller;
@@ -793,6 +62,442 @@ class LayerEngine {
       await c.removeLayer('seamap-layer');
       await c.removeSource('seamap');
     } catch (_) {}
+  }
+
+  static const _nameExpr = ['coalesce', ['get', 'name:en'], ['get', 'name']];
+
+  /// Sets up the base map (roads, water, buildings, land use, labels — or
+  /// the online raster fallback) via the imperative controller API.
+  ///
+  /// Embedding these directly in the style JSON string passed to
+  /// setStyle() does not reliably render for a custom local vector source
+  /// in this maplibre_gl version — confirmed via direct device testing,
+  /// where the exact same data rendered correctly when added imperatively
+  /// but never rendered when baked into the style JSON. The overlay layers
+  /// below (landmarks/magnetic/seamap) already used this imperative
+  /// pattern, which is why they always worked while the base map didn't.
+  Future<void> setupBaseMapLayers({
+    required bool isOffline,
+    String? localMBTilesUrl,
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+
+    final hasLocalTiles =
+        localMBTilesUrl != null && localMBTilesUrl.isNotEmpty;
+
+    if (hasLocalTiles) {
+      await c.addSource(
+        'openmaptiles',
+        VectorSourceProperties(
+          tiles: ['$localMBTilesUrl/{z}/{x}/{y}.pbf'],
+          minzoom: 0,
+          maxzoom: 14,
+        ),
+      );
+
+      await c.addFillLayer(
+        'openmaptiles',
+        'water',
+        const FillLayerProperties(fillColor: '#A8D1E7', fillOpacity: 0.9),
+        sourceLayer: 'water',
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'waterway',
+        const LineLayerProperties(
+          lineColor: '#7EC8E3',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 8, 0.5, 12, 2.0, 14, 3.0,
+          ],
+        ),
+        sourceLayer: 'waterway',
+      );
+      await c.addFillLayer(
+        'openmaptiles',
+        'landcover-grass',
+        const FillLayerProperties(fillColor: '#D4EDBC', fillOpacity: 0.8),
+        sourceLayer: 'landcover',
+        filter: ['==', ['get', 'class'], 'grass'],
+      );
+      await c.addFillLayer(
+        'openmaptiles',
+        'landcover-wood',
+        const FillLayerProperties(fillColor: '#BDDFAD', fillOpacity: 0.75),
+        sourceLayer: 'landcover',
+        filter: ['==', ['get', 'class'], 'wood'],
+      );
+      await c.addFillLayer(
+        'openmaptiles',
+        'landuse-park',
+        const FillLayerProperties(fillColor: '#C8E6C0', fillOpacity: 0.85),
+        sourceLayer: 'landuse',
+        filter: [
+          'in', ['get', 'class'],
+          ['literal', ['park', 'pitch', 'recreation_ground', 'garden']],
+        ],
+      );
+      await c.addFillLayer(
+        'openmaptiles',
+        'landuse-residential',
+        const FillLayerProperties(fillColor: '#EBEBEB', fillOpacity: 0.6),
+        sourceLayer: 'landuse',
+        filter: ['==', ['get', 'class'], 'residential'],
+      );
+      await c.addFillLayer(
+        'openmaptiles',
+        'landuse-commercial',
+        const FillLayerProperties(fillColor: '#F5DEB3', fillOpacity: 0.5),
+        sourceLayer: 'landuse',
+        filter: [
+          'in', ['get', 'class'],
+          ['literal', ['commercial', 'retail', 'industrial']],
+        ],
+      );
+      await c.addFillLayer(
+        'openmaptiles',
+        'park-fill',
+        const FillLayerProperties(fillColor: '#C8E6C0', fillOpacity: 0.7),
+        sourceLayer: 'park',
+      );
+      await c.addFillLayer(
+        'openmaptiles',
+        'building',
+        const FillLayerProperties(
+          fillColor: '#D9C9B5',
+          fillOpacity: [
+            'interpolate', ['linear'], ['zoom'], 13, 0.4, 15, 0.9,
+          ],
+          fillOutlineColor: '#C4A882',
+        ),
+        sourceLayer: 'building',
+        minzoom: 13,
+      );
+
+      // Road casings (drawn first so fills appear on top)
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-motorway-casing',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#D4820A',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 5, 2.0, 10, 6.0, 14, 10.0,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'motorway'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-trunk-casing',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#C9A000',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 6, 1.5, 10, 5.5, 14, 9.0,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'trunk'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-primary-casing',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#BBBBBB',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 7, 1.5, 10, 5.0, 14, 8.5,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'primary'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-secondary-casing',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#C4C4C4',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 9, 1.0, 12, 4.0, 14, 7.0,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: [
+          'in', ['get', 'class'], ['literal', ['secondary', 'tertiary']],
+        ],
+      );
+
+      // Road fills
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-motorway',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#FFA726',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 5, 1.0, 10, 4.0, 14, 7.0,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'motorway'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-trunk',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#FFD54F',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 6, 1.0, 10, 3.5, 14, 6.5,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'trunk'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-primary',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#FFFFFF',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 7, 0.8, 10, 3.0, 14, 6.0,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'primary'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-secondary',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#FFFFFF',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 9, 0.6, 12, 2.5, 14, 5.0,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'secondary'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-tertiary',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#F5F5F5',
+          lineWidth: [
+            'interpolate', ['linear'], ['zoom'], 10, 0.4, 12, 2.0, 14, 4.0,
+          ],
+        ),
+        sourceLayer: 'transportation',
+        filter: ['==', ['get', 'class'], 'tertiary'],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-minor',
+        const LineLayerProperties(
+          lineCap: 'round',
+          lineColor: '#EEEEEE',
+          lineWidth: ['interpolate', ['linear'], ['zoom'], 12, 0.3, 14, 2.0],
+        ),
+        sourceLayer: 'transportation',
+        filter: [
+          'in', ['get', 'class'], ['literal', ['minor', 'service', 'track']],
+        ],
+        minzoom: 12,
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'road-path',
+        const LineLayerProperties(
+          lineColor: '#C8B89A',
+          lineWidth: 1.0,
+          lineDasharray: [2, 2],
+        ),
+        sourceLayer: 'transportation',
+        filter: [
+          'in', ['get', 'class'],
+          ['literal', ['path', 'pedestrian', 'cycleway']],
+        ],
+        minzoom: 13,
+      );
+
+      // Admin boundaries
+      await c.addLineLayer(
+        'openmaptiles',
+        'boundary-country',
+        const LineLayerProperties(
+          lineColor: '#9E9E9E',
+          lineWidth: 1.5,
+          lineDasharray: [4, 3],
+        ),
+        sourceLayer: 'boundary',
+        filter: ['==', ['get', 'admin_level'], 2],
+      );
+      await c.addLineLayer(
+        'openmaptiles',
+        'boundary-state',
+        const LineLayerProperties(
+          lineColor: '#BDBDBD',
+          lineWidth: 1.0,
+          lineDasharray: [3, 3],
+        ),
+        sourceLayer: 'boundary',
+        filter: ['==', ['get', 'admin_level'], 4],
+        minzoom: 6,
+      );
+
+      // Labels
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'road-name',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: 10,
+          symbolPlacement: 'line',
+          textMaxAngle: 30,
+          textColor: '#555555',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.5,
+        ),
+        sourceLayer: 'transportation_name',
+        minzoom: 12,
+      );
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'water-name',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: 11,
+          symbolPlacement: 'point',
+          textColor: '#3A7FC1',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.5,
+        ),
+        sourceLayer: 'water_name',
+        minzoom: 10,
+      );
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'waterway-name',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: 10,
+          symbolPlacement: 'line',
+          textColor: '#3A7FC1',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.5,
+        ),
+        sourceLayer: 'waterway',
+        minzoom: 13,
+      );
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'park-name',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: 11,
+          symbolPlacement: 'point',
+          textColor: '#2E7D32',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.5,
+        ),
+        sourceLayer: 'park',
+        minzoom: 12,
+      );
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'poi-label',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: 11,
+          textMaxWidth: 8,
+          textAnchor: 'top',
+          textOffset: [0, 0.5],
+          textColor: '#333333',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.5,
+        ),
+        sourceLayer: 'poi',
+        minzoom: 14,
+        filter: ['<=', ['get', 'rank'], 3],
+      );
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'place-suburb',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: 12,
+          textTransform: 'uppercase',
+          textLetterSpacing: 0.1,
+          textColor: '#757575',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.5,
+        ),
+        sourceLayer: 'place',
+        minzoom: 11,
+        filter: [
+          'in', ['get', 'class'],
+          ['literal', ['suburb', 'neighbourhood', 'quarter']],
+        ],
+      );
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'place-town',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: ['interpolate', ['linear'], ['zoom'], 8, 11, 12, 14],
+          textColor: '#333333',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 2.0,
+        ),
+        sourceLayer: 'place',
+        minzoom: 8,
+        filter: [
+          'in', ['get', 'class'], ['literal', ['village', 'town']],
+        ],
+      );
+      await c.addSymbolLayer(
+        'openmaptiles',
+        'place-city',
+        const SymbolLayerProperties(
+          textField: _nameExpr,
+          textSize: [
+            'interpolate', ['linear'], ['zoom'], 4, 10, 8, 16, 12, 20,
+          ],
+          textColor: '#1A1A1A',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 2.5,
+        ),
+        sourceLayer: 'place',
+        minzoom: 4,
+        filter: [
+          'in', ['get', 'class'], ['literal', ['city', 'capital']],
+        ],
+      );
+    } else if (!isOffline) {
+      await c.addSource(
+        'open-tiles',
+        const RasterSourceProperties(
+          tiles: [
+            'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          ],
+        ),
+      );
+      await c.addRasterLayer(
+        'open-tiles',
+        'base-tiles',
+        const RasterLayerProperties(),
+        minzoom: 0,
+        maxzoom: 14,
+      );
+    }
   }
 
   /// Setup the data sources and rendering layers for landmarks, seamap, and magnetic baselines.
