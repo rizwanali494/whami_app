@@ -62,4 +62,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/catalog.json
+    - assets/glyphs/Noto Sans Regular/
+    - assets/world_basemap/
 

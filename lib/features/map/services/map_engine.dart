@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:maplibre_gl/maplibre_gl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/position_opinion.dart';
@@ -11,10 +13,7 @@ class TileEngine {
   /// for why: embedding sources/layers directly in this JSON string does not
   /// reliably render for a custom local vector source in this maplibre_gl
   /// version, confirmed via direct device testing.
-  Map<String, dynamic> generateStyle({
-    required bool isOffline,
-    String? localMBTilesUrl,
-  }) {
+  Map<String, dynamic> generateStyle({String? glyphsUrl}) {
     return {
       'version': 8,
       'name': 'WHAMI Offline Vector',
@@ -26,13 +25,10 @@ class TileEngine {
           'paint': {'background-color': '#F2EFE9'},
         },
       ],
-      // Use MapLibre demo glyphs for text labels — online only. Referencing
-      // this URL while offline can make MapLibre GL Native fail loading the
-      // *entire* style (not just labels), so it's omitted offline; symbol
-      // layers just render without text in that case. In a future update,
-      // bundle Noto Sans PBFs in assets/ for fully-offline label rendering.
-      if (!isOffline)
-        'glyphs': 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      // Bundled Noto Sans glyphs served locally (see GlyphServer) — works
+      // identically online and offline, no external dependency.
+      if (glyphsUrl != null && glyphsUrl.isNotEmpty)
+        'glyphs': '$glyphsUrl/{fontstack}/{range}.pbf',
     };
   }
 }
@@ -79,6 +75,7 @@ class LayerEngine {
   Future<void> setupBaseMapLayers({
     required bool isOffline,
     String? localMBTilesUrl,
+    String? worldBasemapUrl,
   }) async {
     final c = _controller;
     if (c == null) return;
@@ -356,6 +353,7 @@ class LayerEngine {
         'openmaptiles',
         'road-name',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: 10,
           symbolPlacement: 'line',
@@ -371,6 +369,7 @@ class LayerEngine {
         'openmaptiles',
         'water-name',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: 11,
           symbolPlacement: 'point',
@@ -385,6 +384,7 @@ class LayerEngine {
         'openmaptiles',
         'waterway-name',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: 10,
           symbolPlacement: 'line',
@@ -399,6 +399,7 @@ class LayerEngine {
         'openmaptiles',
         'park-name',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: 11,
           symbolPlacement: 'point',
@@ -413,6 +414,7 @@ class LayerEngine {
         'openmaptiles',
         'poi-label',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: 11,
           textMaxWidth: 8,
@@ -430,6 +432,7 @@ class LayerEngine {
         'openmaptiles',
         'place-suburb',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: 12,
           textTransform: 'uppercase',
@@ -449,6 +452,7 @@ class LayerEngine {
         'openmaptiles',
         'place-town',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: ['interpolate', ['linear'], ['zoom'], 8, 11, 12, 14],
           textColor: '#333333',
@@ -465,6 +469,7 @@ class LayerEngine {
         'openmaptiles',
         'place-city',
         const SymbolLayerProperties(
+          textFont: ['Noto Sans Regular'],
           textField: _nameExpr,
           textSize: [
             'interpolate', ['linear'], ['zoom'], 4, 10, 8, 16, 12, 20,
@@ -497,6 +502,54 @@ class LayerEngine {
         minzoom: 0,
         maxzoom: 14,
       );
+    } else if (isOffline &&
+        worldBasemapUrl != null &&
+        worldBasemapUrl.isNotEmpty) {
+      // No pack active and no internet for the raster fallback — show the
+      // bundled world overview (country outlines + coastlines rendered as
+      // raster PNG tiles, zoom 0-6, built from Natural Earth 1:110m data)
+      // instead of a blank background, so there's always something on
+      // screen. Raster tiles, not vector — city labels are a separate
+      // plain-GeoJSON overlay (same proven-reliable pattern as the
+      // landmarks layer) rather than a vector-tile source, sidestepping
+      // the vector-tile source-layer rendering issues entirely.
+      await c.addSource(
+        'world-basemap',
+        RasterSourceProperties(
+          tiles: ['$worldBasemapUrl/{z}/{x}/{y}.png'],
+          minzoom: 0,
+          maxzoom: 6,
+        ),
+      );
+      await c.addRasterLayer(
+        'world-basemap',
+        'world-basemap-layer',
+        const RasterLayerProperties(),
+        minzoom: 0,
+        maxzoom: 6,
+      );
+
+      try {
+        final placesRaw = await rootBundle.loadString(
+          'assets/world_basemap/places.geojson',
+        );
+        final placesGeoJson = jsonDecode(placesRaw) as Map<String, dynamic>;
+        await c.addGeoJsonSource('world-places', placesGeoJson);
+        await c.addSymbolLayer(
+          'world-places',
+          'world-places-label',
+          const SymbolLayerProperties(
+            textFont: ['Noto Sans Regular'],
+            textField: '{name}',
+            textSize: 11,
+            textColor: '#555555',
+            textHaloColor: '#F2EFE9',
+            textHaloWidth: 1.5,
+          ),
+        );
+      } catch (e) {
+        debugPrint('[LayerEngine] Failed to load world basemap place labels: $e');
+      }
     }
   }
 
@@ -528,6 +581,7 @@ class LayerEngine {
       const SymbolLayerProperties(
         iconImage: 'landmark-icon',
         iconSize: 1.0,
+        textFont: ['Noto Sans Regular'],
         textField: '{name}',
         textColor: '#FFFFFF',
         textSize: 10,
