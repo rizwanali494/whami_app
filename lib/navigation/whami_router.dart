@@ -14,8 +14,7 @@ import '../data/services/sensor_manager.dart';
 import '../data/services/region_pack_storage.dart';
 import '../data/services/download_engine.dart';
 import '../data/services/region_engine.dart';
-import '../data/services/glyph_server.dart';
-import '../data/services/world_basemap_service.dart';
+import '../data/services/raster_tile_cache_service.dart';
 import '../data/services/landmark_database.dart';
 import '../data/services/landmark_engine.dart';
 import '../data/services/position_matcher.dart';
@@ -47,8 +46,7 @@ final sensorManager = SensorManager(
   skyService: skyService,
 );
 
-final glyphServer = GlyphServer()..start();
-final worldBasemapService = WorldBasemapService()..start();
+final rasterTileCacheService = RasterTileCacheService()..start();
 
 final storage = RegionPackStorage();
 final downloadEngine = DownloadEngine(storage: storage);
@@ -72,8 +70,7 @@ final whamiRepo = WhamiRepository(
   regionRepository: regionRepo,
   landmarkRepository: landmarkRepo,
   mapRepository: mapRepo,
-  glyphServer: glyphServer,
-  worldBasemapService: worldBasemapService,
+  rasterTileCacheService: rasterTileCacheService,
 );
 
 final whamiRouter = GoRouter(

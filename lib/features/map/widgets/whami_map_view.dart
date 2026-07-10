@@ -94,9 +94,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
   }
 
   Map<String, dynamic> _buildStyleJson() {
-    return _mapEngine.tile.generateStyle(
-      glyphsUrl: widget.repository.glyphServer.baseUrl,
-    );
+    return _mapEngine.tile.generateStyle();
   }
 
   @override
@@ -162,7 +160,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
       await _mapEngine.layer.setupBaseMapLayers(
         isOffline: isOffline,
         localMBTilesUrl: localMBTilesUrl,
-        worldBasemapUrl: widget.repository.worldBasemapService.baseUrl,
+        rasterCacheUrl: widget.repository.rasterTileCacheService.baseUrl,
       );
     } catch (e) {
       debugPrint('Error loading base map layers: $e');

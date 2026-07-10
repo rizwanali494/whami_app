@@ -12,8 +12,7 @@ import '../services/magnetometer_service.dart';
 import '../services/position_matcher.dart';
 import '../services/trust_fusion_engine.dart';
 import '../services/trust_event_log.dart';
-import '../services/glyph_server.dart';
-import '../services/world_basemap_service.dart';
+import '../services/raster_tile_cache_service.dart';
 import 'region_repository.dart';
 import 'landmark_repository.dart';
 import 'map_repository.dart';
@@ -28,8 +27,7 @@ class WhamiRepository extends ChangeNotifier {
   final RegionRepository regionRepository;
   final LandmarkRepository landmarkRepository;
   final MapRepository mapRepository;
-  final GlyphServer glyphServer;
-  final WorldBasemapService worldBasemapService;
+  final RasterTileCacheService rasterTileCacheService;
 
   // Live navigation state
   List<PositionOpinion> _opinions = [];
@@ -112,8 +110,7 @@ class WhamiRepository extends ChangeNotifier {
     required this.regionRepository,
     required this.landmarkRepository,
     required this.mapRepository,
-    required this.glyphServer,
-    required this.worldBasemapService,
+    required this.rasterTileCacheService,
   }) : _sensors = sensors,
        _matcher = matcher,
        _fusionEngine = fusionEngine,

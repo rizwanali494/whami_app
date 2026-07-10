@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:maplibre_gl/maplibre_gl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/position_opinion.dart';
@@ -13,7 +11,7 @@ class TileEngine {
   /// for why: embedding sources/layers directly in this JSON string does not
   /// reliably render for a custom local vector source in this maplibre_gl
   /// version, confirmed via direct device testing.
-  Map<String, dynamic> generateStyle({String? glyphsUrl}) {
+  Map<String, dynamic> generateStyle() {
     return {
       'version': 8,
       'name': 'WHAMI Offline Vector',
@@ -25,10 +23,6 @@ class TileEngine {
           'paint': {'background-color': '#F2EFE9'},
         },
       ],
-      // Bundled Noto Sans glyphs served locally (see GlyphServer) — works
-      // identically online and offline, no external dependency.
-      if (glyphsUrl != null && glyphsUrl.isNotEmpty)
-        'glyphs': '$glyphsUrl/{fontstack}/{range}.pbf',
     };
   }
 }
@@ -75,7 +69,7 @@ class LayerEngine {
   Future<void> setupBaseMapLayers({
     required bool isOffline,
     String? localMBTilesUrl,
-    String? worldBasemapUrl,
+    String? rasterCacheUrl,
   }) async {
     final c = _controller;
     if (c == null) return;
@@ -484,71 +478,46 @@ class LayerEngine {
           'in', ['get', 'class'], ['literal', ['city', 'capital']],
         ],
       );
-    } else if (!isOffline) {
-      await c.addSource(
-        'open-tiles',
-        const RasterSourceProperties(
-          tiles: [
-            'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-            'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-            'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          ],
-        ),
-      );
-      await c.addRasterLayer(
-        'open-tiles',
-        'base-tiles',
-        const RasterLayerProperties(),
-        minzoom: 0,
-        maxzoom: 14,
-      );
-    } else if (isOffline &&
-        worldBasemapUrl != null &&
-        worldBasemapUrl.isNotEmpty) {
-      // No pack active and no internet for the raster fallback — show the
-      // bundled world overview (country outlines + coastlines rendered as
-      // raster PNG tiles, zoom 0-6, built from Natural Earth 1:110m data)
-      // instead of a blank background, so there's always something on
-      // screen. Raster tiles, not vector — city labels are a separate
-      // plain-GeoJSON overlay (same proven-reliable pattern as the
-      // landmarks layer) rather than a vector-tile source, sidestepping
-      // the vector-tile source-layer rendering issues entirely.
-      await c.addSource(
-        'world-basemap',
-        RasterSourceProperties(
-          tiles: ['$worldBasemapUrl/{z}/{x}/{y}.png'],
-          minzoom: 0,
-          maxzoom: 6,
-        ),
-      );
-      await c.addRasterLayer(
-        'world-basemap',
-        'world-basemap-layer',
-        const RasterLayerProperties(),
-        minzoom: 0,
-        maxzoom: 6,
-      );
-
-      try {
-        final placesRaw = await rootBundle.loadString(
-          'assets/world_basemap/places.geojson',
+    } else {
+      // No pack active.
+      if (rasterCacheUrl != null && rasterCacheUrl.isNotEmpty) {
+        // Raster base tiles routed through RasterTileCacheService: on a
+        // cache hit it serves straight from the local SQLite cache (works
+        // offline, for any area previously panned over while online); on a
+        // miss while online it fetches from CartoDB, caches the tile, and
+        // serves it. A single {z}/{x}/{y} template is enough (vs. the 3
+        // CartoDB subdomains) since the proxy itself round-robins them.
+        await c.addSource(
+          'open-tiles',
+          RasterSourceProperties(tiles: ['$rasterCacheUrl/{z}/{x}/{y}.png']),
         );
-        final placesGeoJson = jsonDecode(placesRaw) as Map<String, dynamic>;
-        await c.addGeoJsonSource('world-places', placesGeoJson);
-        await c.addSymbolLayer(
-          'world-places',
-          'world-places-label',
-          const SymbolLayerProperties(
-            textFont: ['Noto Sans Regular'],
-            textField: '{name}',
-            textSize: 11,
-            textColor: '#555555',
-            textHaloColor: '#F2EFE9',
-            textHaloWidth: 1.5,
+        await c.addRasterLayer(
+          'open-tiles',
+          'base-tiles',
+          const RasterLayerProperties(),
+          minzoom: 0,
+          maxzoom: 14,
+        );
+      } else if (!isOffline) {
+        // Cache proxy hasn't finished starting yet — hit CartoDB directly
+        // so there's no blank window while it comes up.
+        await c.addSource(
+          'open-tiles',
+          const RasterSourceProperties(
+            tiles: [
+              'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+              'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+              'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            ],
           ),
         );
-      } catch (e) {
-        debugPrint('[LayerEngine] Failed to load world basemap place labels: $e');
+        await c.addRasterLayer(
+          'open-tiles',
+          'base-tiles',
+          const RasterLayerProperties(),
+          minzoom: 0,
+          maxzoom: 14,
+        );
       }
     }
   }
