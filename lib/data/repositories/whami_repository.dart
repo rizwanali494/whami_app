@@ -13,6 +13,8 @@ import '../services/position_matcher.dart';
 import '../services/trust_fusion_engine.dart';
 import '../services/trust_event_log.dart';
 import '../services/raster_tile_cache_service.dart';
+import '../services/maplibre_connectivity_service.dart';
+import '../services/glyph_server.dart';
 import 'region_repository.dart';
 import 'landmark_repository.dart';
 import 'map_repository.dart';
@@ -28,6 +30,7 @@ class WhamiRepository extends ChangeNotifier {
   final LandmarkRepository landmarkRepository;
   final MapRepository mapRepository;
   final RasterTileCacheService rasterTileCacheService;
+  final GlyphServer glyphServer;
 
   // Live navigation state
   List<PositionOpinion> _opinions = [];
@@ -111,6 +114,7 @@ class WhamiRepository extends ChangeNotifier {
     required this.landmarkRepository,
     required this.mapRepository,
     required this.rasterTileCacheService,
+    required this.glyphServer,
   }) : _sensors = sensors,
        _matcher = matcher,
        _fusionEngine = fusionEngine,
@@ -156,6 +160,15 @@ class WhamiRepository extends ChangeNotifier {
         packCoverageStatus: status,
       );
       _connectivityMode = state.mode;
+
+      // MapLibre Native runs its own connectivity receiver alongside this
+      // one, and re-queries the real OS state whenever it changes — which
+      // clobbers the forced-connected override the map relies on to keep
+      // fetching from its local loopback tile server(s) while genuinely
+      // offline. Reassert it right here, every time real connectivity
+      // changes, so it's never left clobbered.
+      MapLibreConnectivityService.forceConnected();
+
       notifyListeners();
     });
   }

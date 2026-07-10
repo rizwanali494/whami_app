@@ -44,12 +44,20 @@ class _WhamiMapViewState extends State<WhamiMapView>
   // computed once and only ever updated explicitly via setStyle().
   late String _styleString;
 
-  // Last-applied values that drove the current style, used to detect real
-  // changes in didUpdateWidget. Comparing widget.repository.X directly to
-  // oldWidget.repository.X doesn't work here — both sides are the exact
-  // same shared repository instance, so that comparison is always false.
+  // Last-applied pack id, used to detect a real pack change in
+  // didUpdateWidget. Comparing widget.repository.activePackId directly to
+  // oldWidget.repository.activePackId doesn't work here — both sides are
+  // the exact same shared repository instance, so that comparison is
+  // always false. Connectivity flips are deliberately NOT tracked here
+  // anymore: every base-map source (local vector tiles when a pack is
+  // active, the cache-backed raster proxy otherwise) already works
+  // identically online or offline, so forcing a full setStyle() teardown
+  // on every connectivity change was pure churn — and it landed at exactly
+  // the moment MapLibre Native's own connectivity receiver may have
+  // briefly clobbered the forceConnected() override (see
+  // MapLibreConnectivityService), turning a harmless flip into a visibly
+  // broken map.
   String _lastActivePackId = '';
-  bool _lastIsOffline = false;
 
   // High-level MapEngine managing nested render pipelines
   final MapEngine _mapEngine = MapEngine();
@@ -88,13 +96,13 @@ class _WhamiMapViewState extends State<WhamiMapView>
     )..repeat(reverse: true);
 
     _lastActivePackId = widget.repository.activePackId;
-    _lastIsOffline =
-        widget.repository.connectivityMode == ConnectivityMode.offline;
     _styleString = jsonEncode(_buildStyleJson());
   }
 
   Map<String, dynamic> _buildStyleJson() {
-    return _mapEngine.tile.generateStyle();
+    return _mapEngine.tile.generateStyle(
+      glyphsUrl: widget.repository.glyphServer.baseUrl,
+    );
   }
 
   @override
@@ -152,11 +160,18 @@ class _WhamiMapViewState extends State<WhamiMapView>
     _isLoadingBaseMapLayers = true;
     try {
       final activePack = widget.repository.activeRegionPack;
-      final isOffline =
-          widget.repository.connectivityMode == ConnectivityMode.offline;
       final localMBTilesUrl = activePack != null
           ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
           : null;
+
+      // Connectivity only matters for the no-pack raster fallback (the
+      // brief window before RasterTileCacheService finishes starting) — with
+      // a pack active the base map is served entirely from the local
+      // MBTiles vector tile server, so real connectivity is irrelevant.
+      final isOffline =
+          activePack == null &&
+          widget.repository.connectivityMode == ConnectivityMode.offline;
+
       await _mapEngine.layer.setupBaseMapLayers(
         isOffline: isOffline,
         localMBTilesUrl: localMBTilesUrl,
@@ -175,8 +190,6 @@ class _WhamiMapViewState extends State<WhamiMapView>
     }
 
     final packId = widget.repository.activePackId;
-    final isOffline =
-        widget.repository.connectivityMode == ConnectivityMode.offline;
 
     if (packId.isEmpty) {
       setState(() {
@@ -196,7 +209,6 @@ class _WhamiMapViewState extends State<WhamiMapView>
     }
 
     _lastActivePackId = packId;
-    _lastIsOffline = isOffline;
   }
 
   /// Triggered once the camera settles (not on every intermediate move frame).
@@ -260,12 +272,10 @@ class _WhamiMapViewState extends State<WhamiMapView>
     // NOTE: widget.repository and oldWidget.repository are the exact same
     // shared singleton instance, so comparing fields directly between them
     // always reads the same (current) value on both sides. The real
-    // previous state is tracked separately in _lastActivePackId/_lastIsOffline.
+    // previous state is tracked separately in _lastActivePackId.
     final currentPackId = widget.repository.activePackId;
-    final currentIsOffline =
-        widget.repository.connectivityMode == ConnectivityMode.offline;
 
-    if (currentPackId != _lastActivePackId || currentIsOffline != _lastIsOffline) {
+    if (currentPackId != _lastActivePackId) {
       _onActivePackChanged();
     } else if (_packLoaded) {
       _mapEngine.layer.updateVisibility(widget.layerVisibility);
