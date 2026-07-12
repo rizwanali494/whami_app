@@ -76,54 +76,25 @@ class _SplashScreenState extends State<SplashScreen>
                     opacity: _fadeAnim,
                     child: ScaleTransition(
                       scale: _scaleAnim,
-                      child: Column(
-                        children: [
-                          // W icon mark
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: AppColors.whami,
-                                width: 2.5,
-                              ),
-                              color: AppColors.whami.withValues(alpha: 0.12),
+                      child: Container(
+                        width: 180,
+                        height: 180,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.whami.withValues(alpha: 0.25),
+                              blurRadius: 30,
+                              spreadRadius: 2,
                             ),
-                            child: const Center(
-                              child: Text(
-                                'W',
-                                style: TextStyle(
-                                  color: AppColors.whami,
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -1,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          // WHAMI text
-                          const Text(
-                            'WHAMI',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 42,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 8,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'WHERE AM I?',
-                            style: TextStyle(
-                              color: Color(0xFF546E7A),
-                              fontSize: 11,
-                              letterSpacing: 4,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
+                        child: Image.asset(
+                          'assets/images/app_icon.png',
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                   ),
