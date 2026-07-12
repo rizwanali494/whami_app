@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../models/landmark.dart';
 
 /// Result of matching live position against local region landmark data
 class LandmarkMatch {
@@ -48,6 +49,32 @@ class PositionMatcher {
         cos(lat1 * pi / 180) * cos(lat2 * pi / 180) * sin(dLon / 2) * sin(dLon / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return r * c;
+  }
+
+  /// Find nearest physical landmark from a List of Landmark models (SQLite backed)
+  LandmarkMatch? matchLandmarksList({
+    required double latitude,
+    required double longitude,
+    required List<Landmark> landmarks,
+  }) {
+    if (landmarks.isEmpty) return null;
+
+    double minDistance = double.infinity;
+    String closestName = 'Unknown';
+    double confidence = 0.0;
+
+    for (final landmark in landmarks) {
+      final double dist = _haversine(latitude, longitude, landmark.latitude, landmark.longitude);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestName = landmark.name;
+        confidence = landmark.confidence;
+      }
+    }
+
+    if (minDistance == double.infinity) return null;
+    return LandmarkMatch(name: closestName, distance: minDistance, confidence: confidence);
   }
 
   /// Find nearest physical landmark from GeoJSON features list

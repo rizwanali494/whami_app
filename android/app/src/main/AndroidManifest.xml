@@ -2,7 +2,8 @@
     <application
         android:label="whami"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -30,6 +31,19 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Impeller (Flutter's Vulkan renderer, confirmed active on the test
+             device via "Using the Impeller rendering backend (Vulkan)" in
+             logcat) has known platform-view compositing bugs on some Android
+             GPU/driver combinations — notably Mali GPUs — where GL-heavy
+             plugins like MapLibre render nothing while the rest of the app
+             works fine. Falling back to Skia, which has far more mature
+             platform-view compositing support, to rule this out as the cause
+             of vector tiles never painting despite the data pipeline being
+             fully confirmed correct (style/tiles/layers all load
+             successfully, only the pixels never appear). -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

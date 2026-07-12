@@ -1,4 +1,4 @@
-name: whami
+name: WHAMI
 description: "WHAMI — Where Am I? Verified navigation and position trust engine."
 publish_to: 'none'
 
@@ -41,10 +41,37 @@ dependencies:
   # State management
   provider: ^6.1.0
 
+  # SQLite local database
+  sqflite: ^2.4.2
+
+  # Cryptographic hashes for checksums
+  crypto: ^3.0.6
+
+  # Archive handling for extraction
+  archive: ^4.0.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
+  test: ^1.25.0
+  flutter_native_splash: ^2.4.4
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/catalog.json
+    - assets/glyphs/Noto Sans Regular/
+    - assets/images/
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/images/app_icon.png
+  android_12:
+    color: "#FFFFFF"
+    image: assets/images/app_icon_android12.png
+  android: true
+  ios: true
+

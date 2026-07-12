@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../data/models/region_pack.dart';
+import '../models/region_pack.dart';
+import '../models/region_metadata.dart';
 
 /// Service responsible for managing offline region pack files and directories on the local filesystem
 class RegionPackStorage {
-  static const String _packsSubDir = 'region_packs';
-  static const String _registryFilename = 'registry.json';
+  static const String _packsSubDir = 'WHAMI/packs';
 
   /// Get absolute path to app documents directory
   Future<String> get _appDocPath async {
@@ -14,7 +16,7 @@ class RegionPackStorage {
     return directory.path;
   }
 
-  /// Get directory reference for stored region packs
+  /// Get directory reference for stored region packs (root: WHAMI/packs/)
   Future<Directory> get _packsDirectory async {
     final path = await _appDocPath;
     final dir = Directory('$path/$_packsSubDir');
@@ -24,144 +26,298 @@ class RegionPackStorage {
     return dir;
   }
 
-  /// Get registry file reference
-  Future<File> get _registryFile async {
-    final dir = await _packsDirectory;
-    final file = File('${dir.path}/$_registryFilename');
-    if (!await file.exists()) {
-      // Write initial empty registry
-      await file.writeAsString(jsonEncode(<String, dynamic>{}));
-    }
-    return file;
+  /// Resolve pack folder path
+  Future<Directory> getPackDirectory(
+    String packId, {
+    String? country,
+    String? regionName,
+  }) async {
+    final rootDir = await _packsDirectory;
+    return Directory('${rootDir.path}/$packId');
   }
 
-  /// Load pack manifest from disk
-  Future<Map<String, dynamic>?> getPackManifest(String packId) async {
-    final dir = await _packsDirectory;
-    final manifestFile = File('${dir.path}/$packId/manifest.json');
-    if (await manifestFile.exists()) {
-      try {
-        final content = await manifestFile.readAsString();
-        return jsonDecode(content) as Map<String, dynamic>;
-      } catch (e) {
-        return null;
+  /// Get temporary staging directory for unpack operations. This directory
+  /// is wiped and recreated on every extraction, so it must never be used
+  /// to store anything that needs to outlive a single install (e.g. an
+  /// in-progress download's partial file — see [getDownloadStagingDirectory]).
+  Future<Directory> getTempDirectory() async {
+    final rootDir = await _packsDirectory;
+    final dir = Directory('${rootDir.path}/temp_unpack');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
+  /// Get the staging directory for in-progress (possibly partial) downloads.
+  /// Kept separate from [getTempDirectory] so a resumable `.part` file
+  /// survives independently of the unpack staging dir being cleared.
+  Future<Directory> getDownloadStagingDirectory() async {
+    final rootDir = await _packsDirectory;
+    final dir = Directory('${rootDir.path}/temp_downloads');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
+  /// File that remembers which pack was last activated, so it can be
+  /// restored on the next app launch.
+  Future<File> get _activePackFile async {
+    final rootDir = await _packsDirectory;
+    return File('${rootDir.path}/active_pack.txt');
+  }
+
+  /// Read the persisted active pack id, or null if none is set.
+  Future<String?> getActivePackId() async {
+    try {
+      final file = await _activePackFile;
+      if (await file.exists()) {
+        final id = (await file.readAsString()).trim();
+        return id.isEmpty ? null : id;
       }
+    } catch (e) {
+      debugPrint('[RegionPackStorage] Failed to read active pack id: $e');
     }
     return null;
   }
 
-  /// Save pack manifest to disk
-  Future<void> savePackManifest(String packId, Map<String, dynamic> manifest) async {
-    final dir = await _packsDirectory;
-    final packDir = Directory('${dir.path}/$packId');
+  /// Persist the active pack id (or clear it when [packId] is null).
+  Future<void> setActivePackId(String? packId) async {
+    try {
+      final file = await _activePackFile;
+      if (packId == null) {
+        if (await file.exists()) await file.delete();
+      } else {
+        await file.writeAsString(packId);
+      }
+    } catch (e) {
+      debugPrint('[RegionPackStorage] Failed to persist active pack id: $e');
+    }
+  }
+
+  /// Load pack metadata/manifest from disk
+  Future<RegionMetadata?> getPackMetadata(String packId) async {
+    try {
+      final packDir = await getPackDirectory(packId);
+      final metadataFile = File('${packDir.path}/metadata.json');
+      if (await metadataFile.exists()) {
+        final content = await metadataFile.readAsString();
+        return RegionMetadata.fromJson(
+          jsonDecode(content) as Map<String, dynamic>,
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        '[RegionPackStorage] Failed to read metadata.json for $packId: $e',
+      );
+    }
+    return null;
+  }
+
+  /// Save pack metadata/manifest to disk
+  Future<void> savePackMetadata(String packId, RegionMetadata metadata) async {
+    final packDir = await getPackDirectory(
+      packId,
+      country: metadata.country,
+      regionName: metadata.name,
+    );
     if (!await packDir.exists()) {
       await packDir.create(recursive: true);
     }
-    final manifestFile = File('${packDir.path}/manifest.json');
-    await manifestFile.writeAsString(jsonEncode(manifest));
+    final metadataFile = File('${packDir.path}/metadata.json');
+    await metadataFile.writeAsString(metadata.toJsonString());
   }
 
-  /// Checks if a region pack's files exist locally
+  /// Checks if a region pack's files exist locally (metadata + landmarks.sqlite + map.mbtiles must exist)
   Future<bool> isPackDownloaded(String packId) async {
-    final manifest = await getPackManifest(packId);
-    if (manifest == null) return false;
-
-    // Check if the actual geojson files exist too
-    final dir = await _packsDirectory;
-    final landmarks = File('${dir.path}/$packId/landmarks.geojson');
-    final magnetic = File('${dir.path}/$packId/magnetic.geojson');
-    final seamap = File('${dir.path}/$packId/seamap.geojson');
-
-    return await landmarks.exists() && await magnetic.exists() && await seamap.exists();
+    try {
+      final packDir = await getPackDirectory(packId);
+      final metadataFile = File('${packDir.path}/metadata.json');
+      final mapFile = File('${packDir.path}/map.mbtiles');
+      return await metadataFile.exists() && await mapFile.exists();
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// Scans local folder and returns metadata list of downloaded packs
-  Future<List<RegionPack>> listDownloadedPacks() async {
-    final packsList = <RegionPack>[];
-    final dir = await _packsDirectory;
+  /// Get MBTiles filepath for active map engine
+  Future<String?> getMBTilesPath(String packId) async {
+    final packDir = await getPackDirectory(packId);
+    final file = File('${packDir.path}/map.mbtiles');
+    if (await file.exists()) {
+      return file.path;
+    }
+    return null;
+  }
+
+  /// Get SQLite landmarks database filepath
+  Future<String?> getLandmarksDbPath(String packId) async {
+    final packDir = await getPackDirectory(packId);
+    final file = File('${packDir.path}/landmarks.sqlite');
+    if (await file.exists()) {
+      return file.path;
+    }
+    return null;
+  }
+
+  /// Load the bundled pack catalog (id, download source, checksum, etc.)
+  /// This is the single boundary to swap for a remotely-fetched catalog later.
+  Future<List<Map<String, dynamic>>> loadCatalog() async {
+    try {
+      final raw = await rootBundle.loadString('assets/catalog.json');
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded.cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('[RegionPackStorage] Failed to load catalog.json: $e');
+      return [];
+    }
+  }
+
+  /// Copies bundled Region Packs into the application's documents directory.
+  /// Existing files are overwritten, but the pack directory itself is never
+  /// deleted. This avoids file-lock issues with SQLite/MBTiles.
+  Future<void> discoverBundledPacks() async {
+    final packsDir = await _packsDirectory;
 
     try {
-      final registryFile = await _registryFile;
-      final registryContent = await registryFile.readAsString();
-      final registryJson = jsonDecode(registryContent) as Map<String, dynamic>;
-      final packIds = (registryJson['packs'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          [];
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
 
-      // List directories, filter by registry entries
-      final entities = await dir.list().toList();
+      final bundledAssets = manifest
+          .listAssets()
+          .where((asset) => asset.startsWith('region_packs/'))
+          .toList();
+
+      debugPrint(
+        '[RegionPackStorage] Found ${bundledAssets.length} bundled assets.',
+      );
+
+      if (bundledAssets.isEmpty) {
+        debugPrint('[RegionPackStorage] No bundled region packs found.');
+        return;
+      }
+
+      /// Collect pack folders
+      final packFolders = <String>{};
+
+      for (final asset in bundledAssets) {
+        final parts = asset.split('/');
+
+        if (parts.length >= 3) {
+          packFolders.add('${parts[0]}/${parts[1]}');
+        }
+      }
+
+      debugPrint(
+        '[RegionPackStorage] Found ${packFolders.length} bundled packs.',
+      );
+
+      for (final folder in packFolders) {
+        final packName = folder.split('/').last;
+
+        final destination = Directory('${packsDir.path}/$packName');
+
+        if (!await destination.exists()) {
+          await destination.create(recursive: true);
+        }
+
+        final files = bundledAssets.where(
+          (asset) => asset.startsWith('$folder/'),
+        );
+
+        for (final assetPath in files) {
+          final fileName = assetPath.split('/').last;
+
+          // Ignore macOS metadata
+          if (fileName == '.DS_Store') {
+            continue;
+          }
+
+          final byteData = await rootBundle.load(assetPath);
+
+          final outputFile = File('${destination.path}/$fileName');
+
+          // Remove existing file first
+          if (await outputFile.exists()) {
+            try {
+              await outputFile.delete();
+            } catch (_) {
+              // Ignore delete failure; writeAsBytes below may still succeed.
+            }
+          }
+
+          await outputFile.writeAsBytes(
+            byteData.buffer.asUint8List(
+              byteData.offsetInBytes,
+              byteData.lengthInBytes,
+            ),
+            flush: true,
+          );
+
+          debugPrint('[RegionPackStorage] Updated: $packName/$fileName');
+        }
+
+        debugPrint('[RegionPackStorage] Bundled pack synced: $packName');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('========== REGION PACK ERROR ==========');
+      debugPrint('Exception: $e');
+      debugPrint('Type: ${e.runtimeType}');
+      debugPrint(stackTrace.toString());
+      debugPrint('=======================================');
+    }
+  }
+
+  /// Scans local folder and returns metadata list of downloaded packs (Filesystem as Registry)
+  Future<List<RegionPack>> scanInstalledPacks() async {
+    final packsList = <RegionPack>[];
+    try {
+      final rootDir = await _packsDirectory;
+      if (!await rootDir.exists()) return packsList;
+
+      final entities = rootDir.listSync(recursive: false);
       for (final entity in entities) {
         if (entity is Directory) {
           final packId = entity.path.split('/').last;
-          if (packIds.isNotEmpty && !packIds.contains(packId)) continue;
-          final manifest = await getPackManifest(packId);
-          if (manifest != null) {
-            final isDownloaded = await isPackDownloaded(packId);
-            if (isDownloaded) {
-              packsList.add(RegionPack.fromManifest(manifest, entity.path));
+          if (packId == 'temp_unpack') continue; // Skip staging folder
+
+          if (await isPackDownloaded(packId)) {
+            final meta = await getPackMetadata(packId);
+            debugPrint("Scanning folder: ${entity.path}");
+
+            if (meta != null) {
+              debugPrint("Found pack: ${meta.id} (${meta.name})");
+              packsList.add(RegionPack.fromMetadata(meta, entity.path));
+            } else {
+              debugPrint("Invalid pack: $packId");
             }
           }
         }
       }
     } catch (e) {
-      // Fallback/log
+      debugPrint('[RegionPackStorage] Failed to scan installed packs: $e');
     }
     return packsList;
   }
 
-  /// Reads and parses a local GeoJSON file
-  Future<Map<String, dynamic>> loadGeoJson(String packId, String filename) async {
-    final dir = await _packsDirectory;
-    final file = File('${dir.path}/$packId/$filename');
-    if (!await file.exists()) {
-      throw FileSystemException('GeoJSON pack file $filename not found for $packId');
-    }
-    final content = await file.readAsString();
-    return jsonDecode(content) as Map<String, dynamic>;
-  }
-
-  /// Writes a parsed GeoJSON map structure to disk
-  Future<void> saveGeoJson(String packId, String filename, Map<String, dynamic> data) async {
-    final dir = await _packsDirectory;
-    final packDir = Directory('${dir.path}/$packId');
-    if (!await packDir.exists()) {
-      await packDir.create(recursive: true);
-    }
-    final file = File('${packDir.path}/$filename');
-    await file.writeAsString(jsonEncode(data));
-  }
-
   /// Deletes all files and folder of a region pack
   Future<void> deletePackFiles(String packId) async {
-    final dir = await _packsDirectory;
-    final packDir = Directory('${dir.path}/$packId');
-    if (await packDir.exists()) {
-      await packDir.delete(recursive: true);
-    }
-
-    // Remove from registry file
     try {
-      final registryFile = await _registryFile;
-      final registryContent = await registryFile.readAsString();
-      final registryJson = jsonDecode(registryContent) as Map<String, dynamic>;
-      registryJson.remove(packId);
-      await registryFile.writeAsString(jsonEncode(registryJson));
+      final packDir = await getPackDirectory(packId);
+      if (await packDir.exists()) {
+        await packDir.delete(recursive: true);
+      }
     } catch (e) {
-      //
+      debugPrint('[RegionPackStorage] Error deleting pack files: $e');
     }
   }
 
-  /// Updates status in local registry
-  Future<void> registerPackDownloaded(String packId) async {
-    try {
-      final registryFile = await _registryFile;
-      final registryContent = await registryFile.readAsString();
-      final registryJson = jsonDecode(registryContent) as Map<String, dynamic>;
-      registryJson[packId] = 'downloaded';
-      await registryFile.writeAsString(jsonEncode(registryJson));
-    } catch (e) {
-      //
-    }
+  /// Register pack downloaded is a no-op now, filesystem is registry
+  Future<void> registerPackDownloaded(
+    String packId, {
+    required String country,
+    required String regionName,
+  }) async {
+    // No-op, folder existence is the registry
   }
 }

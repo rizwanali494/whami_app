@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb -s 192.168.100.47:36217 shell echo \"adb responsive check\")",
+      "Bash(adb -s 192.168.100.47:36217 shell screencap -p /sdcard/whami_fix1.png)",
+      "Bash(adb -s 192.168.100.47:36217 pull /sdcard/whami_fix1.png /private/tmp/claude-502/-Users-mc-Development-whami-app/a14dd47c-55fc-434d-b468-59aade7b6499/scratchpad/whami_fix1.png)",
+      "Bash(adb -s 192.168.100.47:36217 logcat -c)",
+      "Bash(adb -s 192.168.100.47:36217 logcat -d --pid=11139)",
+      "Bash(adb -s 192.168.100.47:36217 logcat -d --pid=10205)",
+      "Bash(adb -s 192.168.100.47:36217 shell screencap -p /sdcard/whami_fix_final.png)",
+      "Bash(adb -s 192.168.100.47:36217 pull /sdcard/whami_fix_final.png /private/tmp/claude-502/-Users-mc-Development-whami-app/a14dd47c-55fc-434d-b468-59aade7b6499/scratchpad/whami_fix_final.png)",
+      "Bash(adb -s 192.168.100.47:36217 shell screencap -p /sdcard/whami_fix_stopped.png)",
+      "Bash(adb -s 192.168.100.47:36217 pull /sdcard/whami_fix_stopped.png __TRACKED_VAR__/whami_fix_stopped.png)",
+      "Bash(adb -s 192.168.100.47:36217 shell screencap -p /sdcard/whami_recheck.png)",
+      "Bash(adb -s 192.168.100.47:36217 pull /sdcard/whami_recheck.png /private/tmp/claude-502/-Users-mc-Development-whami-app/a14dd47c-55fc-434d-b468-59aade7b6499/scratchpad/whami_recheck.png)",
+      "Bash(adb -s 192.168.100.47:36217 shell screencap -p /sdcard/whami_recheck2.png)",
+      "Bash(adb -s 192.168.100.47:36217 pull /sdcard/whami_recheck2.png __TRACKED_VAR__/whami_recheck2.png)",
+      "Bash(pkill -f \"flutter run -d 192.168.100.47\")",
+      "Bash(adb devices *)",
+      "Bash(adb connect *)",
+      "Bash(adb -s adb-138207053H005258-aD006J._adb-tls-connect._tcp shell pidof com.example.whami)",
+      "Bash(python3 -c ' *)",
+      "Bash(git stash *)",
+      "Bash(flutter test *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(flutter run *)",
+      "Bash(tee /private/tmp/claude-502/-Users-mc-Development-whami-app/9fea37e9-d942-491c-a4e5-8c5b27bb6bc8/scratchpad/run_log3.txt)",
+      "Bash(adb -s 138207053H005258 shell input swipe 700 1000 200 500 200)",
+      "Bash(adb -s 138207053H005258 shell input tap 540 900)",
+      "Bash(adb -s 138207053H005258 exec-out screencap -p)"
+    ]
+  }
+}

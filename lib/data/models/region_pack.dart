@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'region_metadata.dart';
 
 class RegionPack {
   final String id;
@@ -22,6 +23,13 @@ class RegionPack {
   // Local filesystem path (null if not downloaded)
   final String? localPath;
 
+  // Rich metadata engine backing (optional, populated when downloaded/read)
+  final RegionMetadata? metadata;
+
+  // Remote source for packs that aren't downloaded yet (from catalog.json)
+  final String? downloadUrl;
+  final String? checksum;
+
   const RegionPack({
     required this.id,
     required this.name,
@@ -37,6 +45,9 @@ class RegionPack {
     this.isDownloading = false,
     this.fileSizes = const {},
     this.localPath,
+    this.metadata,
+    this.downloadUrl,
+    this.checksum,
   });
 
   RegionPack copyWith({
@@ -45,6 +56,9 @@ class RegionPack {
     String? downloadStage,
     bool? isDownloading,
     String? localPath,
+    RegionMetadata? metadata,
+    String? downloadUrl,
+    String? checksum,
   }) {
     return RegionPack(
       id: id,
@@ -61,19 +75,29 @@ class RegionPack {
       isDownloading: isDownloading ?? this.isDownloading,
       fileSizes: fileSizes,
       localPath: localPath ?? this.localPath,
+      metadata: metadata ?? this.metadata,
+      downloadUrl: downloadUrl ?? this.downloadUrl,
+      checksum: checksum ?? this.checksum,
     );
   }
 
   /// Create a RegionPack from a manifest.json stored on disk
   factory RegionPack.fromManifest(Map<String, dynamic> json, String diskPath) {
+    RegionMetadata? meta;
+    try {
+      meta = RegionMetadata.fromJson(json);
+    } catch (_) {
+      // Allow fallback if metadata.json format is incomplete
+    }
+
     return RegionPack(
       id: json['id'] as String,
       name: json['name'] as String,
-      type: json['type'] as String? ?? 'Unknown',
+      type: json['type'] as String? ?? json['packType'] as String? ?? 'Unknown',
       size: json['size'] as String? ?? '0 MB',
       status: 'downloaded',
-      location: json['location'] as String? ?? '',
-      lastUpdated: json['lastUpdated'] as String? ?? '',
+      location: json['location'] as String? ?? json['country'] as String? ?? '',
+      lastUpdated: json['lastUpdated'] as String? ?? json['created'] as String? ?? '',
       includedData: (json['includedData'] as List<dynamic>?)
               ?.cast<String>() ??
           [],
@@ -82,11 +106,59 @@ class RegionPack {
               ?.map((k, v) => MapEntry(k, v as String)) ??
           {},
       localPath: diskPath,
+      metadata: meta,
+    );
+  }
+
+  /// Create from pure RegionMetadata
+  factory RegionPack.fromMetadata(RegionMetadata meta, String diskPath, {String status = 'downloaded'}) {
+    // Format bytes to readable size
+    final double mb = meta.sizeBytes / (1024 * 1024);
+    final sizeStr = '${mb.toStringAsFixed(1)} MB';
+
+    return RegionPack(
+      id: meta.id,
+      name: meta.name,
+      type: meta.packType,
+      size: sizeStr,
+      status: status,
+      location: meta.description ?? meta.country,
+      lastUpdated: meta.createdAt ?? meta.versions.data,
+      includedData: const ['Land maps', 'SQLite database', 'MBTiles maps'],
+      trustScore: meta.trustScore,
+      localPath: diskPath,
+      metadata: meta,
+    );
+  }
+
+  /// Create a not-yet-downloaded RegionPack from a catalog.json entry
+  factory RegionPack.fromCatalogEntry(Map<String, dynamic> json) {
+    final sizeBytes = json['sizeBytes'] as int? ?? 0;
+    final mb = sizeBytes / (1024 * 1024);
+    final sizeStr = '${mb.toStringAsFixed(1)} MB';
+
+    return RegionPack(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      type: json['packType'] as String? ?? 'Unknown',
+      size: sizeStr,
+      status: 'available',
+      location: json['country'] as String? ?? '',
+      lastUpdated: '',
+      includedData: const ['Land maps', 'SQLite database', 'MBTiles maps'],
+      trustScore: json['trustScore'] as int? ?? 0,
+      localPath: null,
+      metadata: null,
+      downloadUrl: json['downloadUrl'] as String?,
+      checksum: json['checksum'] as String?,
     );
   }
 
   /// Serialize to JSON for saving as manifest.json
   Map<String, dynamic> toManifest() {
+    if (metadata != null) {
+      return metadata!.toJson();
+    }
     return {
       'id': id,
       'name': name,

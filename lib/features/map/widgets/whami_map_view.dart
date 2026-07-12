@@ -5,9 +5,10 @@ import 'package:flutter/gestures.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import '../../../core/constants/connectivity_status.dart';
 import '../../../data/models/position_opinion.dart';
-import '../../../core/constants/app_colors.dart';
+import '../../../data/models/landmark.dart';
 import '../../../data/repositories/whami_repository.dart';
-import '../../../core/map/offline_style.dart';
+import '../../../data/services/maplibre_connectivity_service.dart';
+import '../services/map_engine.dart';
 
 class WhamiMapView extends StatefulWidget {
   final List<PositionOpinion> opinions;
@@ -32,8 +33,59 @@ class _WhamiMapViewState extends State<WhamiMapView>
   bool _isUserPanning = false;
   late final AnimationController _pulseController;
 
+  // The style passed to MapLibreMap must stay referentially/textually
+  // stable across rebuilds: the maplibre_gl plugin diffs `styleString` as
+  // part of its native options sync on every widget rebuild (not just via
+  // our own _onActivePackChanged()/setStyle() calls), and force-reloads
+  // the entire native style whenever it changes — wiping dynamically-added
+  // layers outside our control. Recomputing it fresh in build() meant ANY
+  // rebuild (e.g. a connectivity change, or the 5Hz+ position-tracking
+  // notifyListeners() storm) could silently blank the map. So it's
+  // computed once and only ever updated explicitly via setStyle().
+  late String _styleString;
+
+  // Last-applied pack id, used to detect a real pack change in
+  // didUpdateWidget. Comparing widget.repository.activePackId directly to
+  // oldWidget.repository.activePackId doesn't work here — both sides are
+  // the exact same shared repository instance, so that comparison is
+  // always false. Connectivity flips are deliberately NOT tracked here
+  // anymore: every base-map source (local vector tiles when a pack is
+  // active, the cache-backed raster proxy otherwise) already works
+  // identically online or offline, so forcing a full setStyle() teardown
+  // on every connectivity change was pure churn — and it landed at exactly
+  // the moment MapLibre Native's own connectivity receiver may have
+  // briefly clobbered the forceConnected() override (see
+  // MapLibreConnectivityService), turning a harmless flip into a visibly
+  // broken map.
+  String _lastActivePackId = '';
+
+  // High-level MapEngine managing nested render pipelines
+  final MapEngine _mapEngine = MapEngine();
+
   // Track whether opinions are currently being updated to prevent overlapping
   bool _isUpdatingOpinions = false;
+
+  // Track whether a camera-idle refresh is in flight to prevent overlapping
+  bool _isRefreshingCameraViewport = false;
+
+  // Track whether pack layers are currently being (re)added to prevent
+  // overlapping calls. onStyleLoadedCallback is driven by the native SDK
+  // and can fire more than once for what's logically a single style load;
+  // without this guard, two overlapping _loadPackLayers() calls can each
+  // try to add the same named layer (setupLayers()'s own remove-then-add
+  // step only protects against sequential re-calls, not truly concurrent
+  // ones), which the native side rejects as "layer already exists".
+  bool _isLoadingPackLayers = false;
+
+  // Same reentrancy protection as _isLoadingPackLayers, for the base map
+  // layers (roads/water/buildings/labels or raster fallback) added via
+  // LayerEngine.setupBaseMapLayers().
+  bool _isLoadingBaseMapLayers = false;
+
+  // Whether we've already zoomed the camera in for the current tracking
+  // session once a live GPS fix was confirmed (vs. sitting at the far-out
+  // initial zoom for every subsequent pan while tracking).
+  bool _hasZoomedForGpsConfirmation = false;
 
   @override
   void initState() {
@@ -42,51 +94,193 @@ class _WhamiMapViewState extends State<WhamiMapView>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
+
+    _lastActivePackId = widget.repository.activePackId;
+    _styleString = jsonEncode(_buildStyleJson());
+  }
+
+  Map<String, dynamic> _buildStyleJson() {
+    return _mapEngine.tile.generateStyle(
+      glyphsUrl: widget.repository.glyphServer.baseUrl,
+    );
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _mapEngine.detach();
     super.dispose();
   }
 
   void _onMapCreated(MapLibreMapController controller) async {
     _controller = controller;
-    _controller!.addListener(_onMapChanged);
+    _mapEngine.attach(controller);
+
+    // Re-assert this on every map view creation — MapLibre Native
+    // (re-)activates its own connectivity receiver around map view init,
+    // which can overwrite the one-time override set at engine startup
+    // (MainActivity.kt) with the real (possibly offline) OS state.
+    await MapLibreConnectivityService.forceConnected();
 
     if (widget.repository.activePackId.isEmpty) {
       final gps = widget.repository.sensors.gpsService;
       await gps.initialize();
       final pos = await gps.getCurrentPosition();
       if (pos != null && _controller != null && mounted) {
-        _controller!.animateCamera(
-          CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 12.5),
-        );
+        _mapEngine.camera.centerOn(pos.latitude, pos.longitude, zoom: 12.5);
       }
     }
 
-    await _loadPackLayers();
+    // Re-sync now that the native map view actually exists — a pack can
+    // already be active by this point (e.g. restored from a previous
+    // session before the platform view finished initializing).
+    // _onActivePackChanged() no-ops if called before _controller is set,
+    // so nothing else would ever apply the correct style without this.
+    await _onActivePackChanged();
   }
 
-  void _onMapChanged() {
-    // Redraw markers/overlays if camera moves (if using screen projections)
+  void _onStyleLoaded() async {
+    if (!mounted) return;
+    // Base map first (roads/water/buildings sit below the overlays).
+    await _loadBaseMapLayers();
+    await _loadPackLayers();
+    if (_packLoaded) {
+      await _mapEngine.layer.updateVisibility(widget.layerVisibility);
+      _updateOpinionsMarkers();
+    }
+  }
+
+  /// Adds the base map (roads/water/buildings/labels, or the raster
+  /// fallback) via the imperative controller API. Must be called after
+  /// every style (re)load, since setStyle() tears down and replaces the
+  /// whole native style, wiping anything added imperatively before it.
+  Future<void> _loadBaseMapLayers() async {
+    if (_controller == null) return;
+    if (_isLoadingBaseMapLayers) return;
+    _isLoadingBaseMapLayers = true;
+    try {
+      final activePack = widget.repository.activeRegionPack;
+      final localMBTilesUrl = activePack != null
+          ? widget.repository.regionRepository.regionEngine.tileServer.baseUrl
+          : null;
+
+      // Connectivity only matters for the no-pack raster fallback (the
+      // brief window before RasterTileCacheService finishes starting) — with
+      // a pack active the base map is served entirely from the local
+      // MBTiles vector tile server, so real connectivity is irrelevant.
+      final isOffline =
+          activePack == null &&
+          widget.repository.connectivityMode == ConnectivityMode.offline;
+
+      await _mapEngine.layer.setupBaseMapLayers(
+        isOffline: isOffline,
+        localMBTilesUrl: localMBTilesUrl,
+        rasterCacheUrl: widget.repository.rasterTileCacheService.baseUrl,
+      );
+    } catch (e) {
+      debugPrint('Error loading base map layers: $e');
+    } finally {
+      _isLoadingBaseMapLayers = false;
+    }
+  }
+
+  Future<void> _onActivePackChanged() async {
+    if (_controller == null) {
+      return;
+    }
+
+    final packId = widget.repository.activePackId;
+
+    if (packId.isEmpty) {
+      setState(() {
+        _packLoaded = false;
+      });
+      await _mapEngine.layer.clearLayers();
+    }
+
+    // Centering is now handled by WhamiRepository to ensure tracking is disabled
+
+    final styleJson = _buildStyleJson();
+    try {
+      await _controller!.setStyle(jsonEncode(styleJson));
+      _styleString = jsonEncode(styleJson);
+    } catch (e) {
+      debugPrint('Error loading map style on pack activation: $e');
+    }
+
+    _lastActivePackId = packId;
+  }
+
+  /// Triggered once the camera settles (not on every intermediate move frame).
+  /// LandmarkEngine viewport cache intercepts coordinates to guarantee
+  /// sub-millisecond cache hits.
+  void _onMapCameraChanged() async {
+    if (_controller == null || !_packLoaded) return;
+    if (_isRefreshingCameraViewport) return;
+    _isRefreshingCameraViewport = true;
+    try {
+      final bounds = await _controller!.getVisibleRegion();
+
+      // Update central MapRepository coordinate state
+      widget.repository.mapRepository.updateBounds(
+        bounds.southwest.latitude,
+        bounds.southwest.longitude,
+        bounds.northeast.latitude,
+        bounds.northeast.longitude,
+      );
+
+      widget.repository.mapRepository.updateZoom(
+        _controller!.cameraPosition?.zoom ?? 8.0,
+      );
+      if (_controller!.cameraPosition != null) {
+        widget.repository.mapRepository.updateCenter(
+          _controller!.cameraPosition!.target.latitude,
+          _controller!.cameraPosition!.target.longitude,
+        );
+      }
+
+      // Fetch from SQLite (or LandmarkEngine cache)
+      final visible = await widget.repository.landmarkRepository
+          .getVisibleLandmarks(
+            bounds.southwest.latitude,
+            bounds.southwest.longitude,
+            bounds.northeast.latitude,
+            bounds.northeast.longitude,
+          );
+
+      // Save to MapRepository state
+      widget.repository.mapRepository.updateVisibleLandmarks(visible);
+
+      // Reload landmarks symbol GeoJSON
+      final geo = _landmarksToGeoJson(visible);
+      await _controller!.setGeoJsonSource('landmarks', geo);
+    } catch (_) {
+    } finally {
+      _isRefreshingCameraViewport = false;
+    }
   }
 
   @override
   void didUpdateWidget(WhamiMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Reset panning state if tracking was just turned on
     if (!oldWidget.repository.isTracking && widget.repository.isTracking) {
       _isUserPanning = false;
+      _hasZoomedForGpsConfirmation = false;
     }
 
-    if (widget.repository.activePackId != oldWidget.repository.activePackId) {
-      _loadPackLayers();
-    } else {
-      _updateLayersVisibility();
+    // NOTE: widget.repository and oldWidget.repository are the exact same
+    // shared singleton instance, so comparing fields directly between them
+    // always reads the same (current) value on both sides. The real
+    // previous state is tracked separately in _lastActivePackId.
+    final currentPackId = widget.repository.activePackId;
+
+    if (currentPackId != _lastActivePackId) {
+      _onActivePackChanged();
+    } else if (_packLoaded) {
+      _mapEngine.layer.updateVisibility(widget.layerVisibility);
     }
-    _updateOpinionsMarkers();
+    if (_packLoaded) _updateOpinionsMarkers();
     _handleMapCentering();
   }
 
@@ -98,118 +292,114 @@ class _WhamiMapViewState extends State<WhamiMapView>
       final targetLat = widget.repository.mapCenterLat!;
       final targetLng = widget.repository.mapCenterLng!;
 
-      _controller!.animateCamera(
-        CameraUpdate.newLatLngZoom(LatLng(targetLat, targetLng), 14.5),
-      );
+      _mapEngine.camera.centerOn(targetLat, targetLng, zoom: 14.5);
 
       widget.repository.mapCenterLat = null;
       widget.repository.mapCenterLng = null;
       _isUserPanning = false;
     } else if (widget.repository.isTracking && !_isUserPanning) {
       final whamiPos = widget.repository.getTrustedPosition();
-      _controller!.animateCamera(
-        CameraUpdate.newLatLng(LatLng(whamiPos.latitude, whamiPos.longitude)),
-      );
+
+      if (!_hasZoomedForGpsConfirmation) {
+        PositionOpinion? gpsOpinion;
+        try {
+          gpsOpinion = widget.repository.getPositionOpinions().firstWhere(
+            (o) => o.sourceType == 'gps',
+          );
+        } catch (_) {
+          gpsOpinion = null;
+        }
+        final gpsConfirmed =
+            gpsOpinion != null && gpsOpinion.status != 'unavailable';
+
+        if (gpsConfirmed) {
+          // Matches the mbtiles source's actual maxzoom (14) — avoids
+          // upscaled/overzoomed tiles at higher camera zoom levels.
+          _mapEngine.camera.centerOn(
+            whamiPos.latitude,
+            whamiPos.longitude,
+            zoom: 9.0,
+          );
+          _hasZoomedForGpsConfirmation = true;
+          return;
+        }
+      }
+
+      _mapEngine.camera.panTo(whamiPos.latitude, whamiPos.longitude);
     }
   }
 
   Future<void> _loadPackLayers() async {
     if (_controller == null) return;
-
-    final packId = widget.repository.activePackId;
-    if (packId.isEmpty) {
-      setState(() {
-        _packLoaded = false;
-      });
-      return;
-    }
+    // onStyleLoadedCallback can fire more than once for one logical style
+    // load; a second overlapping call here is redundant, not new
+    // information, so it's simply dropped rather than queued/retried.
+    if (_isLoadingPackLayers) return;
+    _isLoadingPackLayers = true;
 
     try {
-      final storage = widget.repository.storage;
+      final packId = widget.repository.activePackId;
+      if (packId.isEmpty) {
+        setState(() {
+          _packLoaded = false;
+        });
+        await _mapEngine.layer.clearLayers();
+        return;
+      }
 
-      // Read local geojson files
-      final landmarks = await storage.loadGeoJson(packId, 'landmarks.geojson');
-      final magnetic = await storage.loadGeoJson(packId, 'magnetic.geojson');
-      final seamap = await storage.loadGeoJson(packId, 'seamap.geojson');
+      // Feed local SQLite landmarks inside current view
+      final bounds = await _controller!.getVisibleRegion();
+      final visible = await widget.repository.landmarkRepository
+          .getVisibleLandmarks(
+            bounds.southwest.latitude,
+            bounds.southwest.longitude,
+            bounds.northeast.latitude,
+            bounds.northeast.longitude,
+          );
 
-      // Clear existing layers & sources if already loaded
-      try {
-        await _controller!.removeLayer('landmark-layer');
-        await _controller!.removeSource('landmarks');
-        await _controller!.removeLayer('magnetic-layer');
-        await _controller!.removeSource('magnetic');
-        await _controller!.removeLayer('seamap-layer');
-        await _controller!.removeSource('seamap');
-      } catch (_) {}
+      final landmarksGeo = _landmarksToGeoJson(visible);
+      final emptyGeo = {'type': 'FeatureCollection', 'features': []};
 
-      // Add to map as sources
-      await _controller!.addGeoJsonSource('landmarks', landmarks);
-      await _controller!.addSymbolLayer(
-        'landmarks',
-        'landmark-layer',
-        const SymbolLayerProperties(
-          iconImage: 'landmark-icon',
-          iconSize: 1.0,
-          textField: '{name}',
-          textColor: '#FFFFFF',
-          textSize: 10,
-          textOffset: [0, 1.5],
-        ),
-      );
-
-      await _controller!.addGeoJsonSource('magnetic', magnetic);
-      await _controller!.addCircleLayer(
-        'magnetic',
-        'magnetic-layer',
-        const CircleLayerProperties(
-          circleRadius: 5.0,
-          circleColor: '#E24B4A',
-          circleOpacity: 0.6,
-        ),
-      );
-
-      await _controller!.addGeoJsonSource('seamap', seamap);
-      await _controller!.addLineLayer(
-        'seamap',
-        'seamap-layer',
-        const LineLayerProperties(lineColor: '#00E5FF', lineWidth: 3.0),
+      // Set up map engine symbol/line/circle layers
+      await _mapEngine.layer.setupLayers(
+        packId: packId,
+        landmarksGeo: landmarksGeo,
+        magneticGeo:
+            emptyGeo, // magnetic baseline generated dynamically in fusion engine if needed
+        seamapGeo: emptyGeo,
       );
 
       setState(() {
         _packLoaded = true;
       });
 
-      _updateLayersVisibility();
+      _mapEngine.layer.updateVisibility(widget.layerVisibility);
     } catch (e) {
       debugPrint('Error loading maplibre layers: $e');
+    } finally {
+      _isLoadingPackLayers = false;
     }
   }
 
-  void _updateLayersVisibility() {
-    if (_controller == null || !_packLoaded) return;
-
-    final landmarksVisible = widget.layerVisibility['landmarks'] == true;
-    final magneticVisible = widget.layerVisibility['magnetic'] == true;
-    final seamapVisible = widget.layerVisibility['seamap'] == true;
-
-    try {
-      _controller!.setLayerProperties(
-        'landmark-layer',
-        SymbolLayerProperties(
-          visibility: landmarksVisible ? 'visible' : 'none',
-        ),
-      );
-      _controller!.setLayerProperties(
-        'magnetic-layer',
-        CircleLayerProperties(visibility: magneticVisible ? 'visible' : 'none'),
-      );
-      _controller!.setLayerProperties(
-        'seamap-layer',
-        LineLayerProperties(visibility: seamapVisible ? 'visible' : 'none'),
-      );
-    } catch (e) {
-      //
-    }
+  Map<String, dynamic> _landmarksToGeoJson(List<Landmark> landmarks) {
+    return {
+      'type': 'FeatureCollection',
+      'features': landmarks.map((l) {
+        return {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [l.longitude, l.latitude],
+          },
+          'properties': {
+            'name': l.name,
+            'landmark_type': l.category,
+            'confidence': l.confidence,
+            'saved': l.saved,
+          },
+        };
+      }).toList(),
+    };
   }
 
   void _updateOpinionsMarkers() async {
@@ -217,44 +407,10 @@ class _WhamiMapViewState extends State<WhamiMapView>
     _isUpdatingOpinions = true;
 
     try {
-      // clearCircles and clearSymbols only affect markers added via addCircle/addSymbol,
-      // not the ones added via Layers (like landmarks, magnetic).
-      await _controller!.clearCircles();
-      await _controller!.clearSymbols();
-
-      if (widget.layerVisibility['opinions'] != true) return;
-
-      // Make a copy to avoid ConcurrentModificationError while awaiting
-      final currentOpinions = List<PositionOpinion>.from(widget.opinions);
-
-      for (final op in currentOpinions) {
-        if (op.confidence == 0 || !op.isActive) continue;
-
-        final color = _colorForSource(op.sourceType);
-        final hexColor =
-            '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
-
-        await _controller!.addCircle(
-          CircleOptions(
-            geometry: LatLng(op.latitude, op.longitude),
-            circleRadius: op.sourceType == 'whami' ? 12.0 : 8.0,
-            circleColor: hexColor,
-            circleOpacity: 0.85,
-            circleStrokeColor: '#FFFFFF',
-            circleStrokeWidth: 1.5,
-          ),
-        );
-
-        await _controller!.addSymbol(
-          SymbolOptions(
-            geometry: LatLng(op.latitude, op.longitude),
-            textField: op.shortCode,
-            textColor: '#FFFFFF',
-            textSize: 9.0,
-            textAnchor: 'center',
-          ),
-        );
-      }
+      final showOpinions = widget.layerVisibility['opinions'] == true;
+      await _mapEngine.overlay.drawOpinions(widget.opinions, showOpinions);
+    } catch (e) {
+      debugPrint('[WhamiMapView] _updateOpinionsMarkers failed: $e');
     } finally {
       _isUpdatingOpinions = false;
     }
@@ -262,16 +418,19 @@ class _WhamiMapViewState extends State<WhamiMapView>
 
   @override
   Widget build(BuildContext context) {
-    final activePackId = widget.repository.activePackId;
-    final centerCoords = activePackId.isNotEmpty
-        ? (activePackId == 'sf_bay'
-              ? const LatLng(37.8087, -122.4098)
-              : const LatLng(39.0968, -120.0324)) // simple coordinate match
-        : const LatLng(37.8087, -122.4098);
+    final activePack = widget.repository.activeRegionPack;
 
-    final isOffline =
-        widget.repository.connectivityMode == ConnectivityMode.offline;
-    final styleJson = OfflineStyle.generate(isOffline: isOffline);
+    // Pick center coords or fallback
+    LatLng centerCoords = const LatLng(37.8087, -122.4098);
+    if (activePack?.metadata != null) {
+      final bounds = activePack!.metadata!.bounds;
+      if (bounds.length == 4 && bounds[0] != 0 && bounds[1] != 0) {
+        // [minLat, minLon, maxLat, maxLon]
+        final lat = (bounds[0] + bounds[2]) / 2.0;
+        final lng = (bounds[1] + bounds[3]) / 2.0;
+        centerCoords = LatLng(lat, lng);
+      }
+    }
 
     return Stack(
       clipBehavior: Clip.none,
@@ -295,9 +454,10 @@ class _WhamiMapViewState extends State<WhamiMapView>
               target: centerCoords,
               zoom: 8,
             ),
-
             onMapCreated: _onMapCreated,
-            styleString: jsonEncode(styleJson),
+            onStyleLoadedCallback: _onStyleLoaded,
+            onCameraIdle: _onMapCameraChanged,
+            styleString: _styleString,
             myLocationEnabled: true,
             myLocationTrackingMode: MyLocationTrackingMode.tracking,
             zoomGesturesEnabled: true,
@@ -312,7 +472,6 @@ class _WhamiMapViewState extends State<WhamiMapView>
           ),
         ),
 
-        // ── Offline status label overlay ──
         if (_packLoaded)
           Positioned(
             top: 8,
@@ -354,69 +513,5 @@ class _WhamiMapViewState extends State<WhamiMapView>
 
     if (activeLayers.isEmpty) return 'offline mode (no layers)';
     return activeLayers.join(' · ');
-  }
-
-  Color _colorForSource(String sourceType) {
-    switch (sourceType) {
-      case 'whami':
-        return AppColors.whami;
-      case 'gps':
-        return AppColors.gps;
-      case 'landmark':
-        return AppColors.landmark;
-      case 'magnetic':
-        return AppColors.magnetic;
-      case 'sextant':
-        return AppColors.sextant;
-      case 'imu':
-        return AppColors.imu;
-      default:
-        return Colors.white;
-    }
-  }
-}
-
-class MapLegendRow extends StatelessWidget {
-  final List<PositionOpinion> opinions;
-
-  const MapLegendRow({super.key, required this.opinions});
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 4,
-      children: opinions.map((op) {
-        if (op.confidence == 0) return const SizedBox.shrink();
-        final color = AppColors.forSource(op.sourceType);
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              alignment: Alignment.center,
-              child: Text(
-                op.shortCode,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 7,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              op.name,
-              style: const TextStyle(
-                fontSize: 10,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        );
-      }).toList(),
-    );
   }
 }

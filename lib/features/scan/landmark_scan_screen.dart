@@ -212,7 +212,7 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
     } else {
       // ── No active pack — low-confidence fallback ──────────────────────
       matchPercent = 45 + rand.nextInt(20); // 45–65%
-      bestLandmark = Landmark(
+      bestLandmark = Landmark.legacy(
         name: 'Unknown Feature',
         latitude: 0.0,
         longitude: 0.0,
@@ -249,7 +249,7 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
         0.98,
       );
 
-      return Landmark(
+      return Landmark.legacy(
         name: names[i],
         latitude: lat,
         longitude: lng,
