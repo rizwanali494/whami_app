@@ -1,22 +1,5 @@
 [
   {
-    "id": "pakistan_lahore",
-    "name": "Lahore",
-    "country": "Pakistan",
-    "packType": "Urban",
-    "bundled": false,
-    "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/whami-8a0ce.firebasestorage.app/o/region_packs%2Fpakistan_lahore.whami?alt=media",
-    "checksum": "cf61a2ff9971a9460c4a8df305c3c19bb28ebc8f60a5d7583714f85dd0d89557",
-    "sizeBytes": 7666450,
-    "bounds": [
-      31.3500,
-      74.2000,
-      31.6500,
-      74.4500
-    ],
-    "trustScore": 88
-  },
-  {
     "id": "usa_san_francisco",
     "name": "San Francisco",
     "country": "United States",
