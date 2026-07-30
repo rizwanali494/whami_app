@@ -4,7 +4,7 @@ import CoreMotion
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
-  private let barometerChannel = "com.example.whami/barometer"
+  private let barometerChannel = "global.whami.app/barometer"
   private let altimeter = CMAltimeter()
 
   override func application(

@@ -23,7 +23,7 @@ class BarometerReading {
 /// Service that streams atmospheric pressure from the device's barometer
 /// Uses native method/event channels
 class BarometerService {
-  static const _channelName = 'com.example.whami/barometer';
+  static const _channelName = 'global.whami.app/barometer';
   static const _methodChannel = MethodChannel('$_channelName/method');
   static const _eventChannel = EventChannel('$_channelName/stream');
 

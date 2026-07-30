@@ -2,7 +2,7 @@ name: WHAMI
 description: "WHAMI — Where Am I? Verified navigation and position trust engine."
 publish_to: 'none'
 
-version: 2.0.0+1
+version: 2.0.0+8
 
 environment:
   sdk: ^3.8.0

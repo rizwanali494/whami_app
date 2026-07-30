@@ -18,7 +18,7 @@
       "Bash(pkill -f \"flutter run -d 192.168.100.47\")",
       "Bash(adb devices *)",
       "Bash(adb connect *)",
-      "Bash(adb -s adb-138207053H005258-aD006J._adb-tls-connect._tcp shell pidof com.example.whami)",
+      "Bash(adb -s adb-138207053H005258-aD006J._adb-tls-connect._tcp shell pidof global.whami.app)",
       "Bash(python3 -c ' *)",
       "Bash(git stash *)",
       "Bash(flutter test *)",

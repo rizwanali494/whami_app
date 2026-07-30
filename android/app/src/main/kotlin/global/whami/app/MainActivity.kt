@@ -1,4 +1,4 @@
-package com.example.whami
+package global.whami.app
 
 import android.content.Context
 import android.hardware.Sensor
@@ -12,7 +12,7 @@ import io.flutter.plugin.common.MethodChannel
 import org.maplibre.android.net.ConnectivityReceiver
 
 class MainActivity : FlutterActivity() {
-    private val BAROMETER_CHANNEL = "com.example.whami/barometer"
+    private val BAROMETER_CHANNEL = "global.whami.app/barometer"
     private var sensorManager: SensorManager? = null
     private var pressureSensor: Sensor? = null
 
@@ -38,7 +38,7 @@ class MainActivity : FlutterActivity() {
         // again right when a map view is actually created (see
         // WhamiMapView._onMapCreated), so the override is reasserted after
         // that point too, not just once at engine-configure time.
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.whami/maplibre_connectivity").setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "global.whami.app/maplibre_connectivity").setMethodCallHandler { call, result ->
             if (call.method == "forceConnected") {
                 ConnectivityReceiver.instance(applicationContext).setConnected(true)
                 result.success(null)

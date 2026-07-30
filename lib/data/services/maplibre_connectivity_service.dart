@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 /// plugin's own Dart API.
 class MapLibreConnectivityService {
   static const _channel = MethodChannel(
-    'com.example.whami/maplibre_connectivity',
+    'global.whami.app/maplibre_connectivity',
   );
 
   /// Call this whenever a MapLibreMap view is (re)created. The engine-startup
