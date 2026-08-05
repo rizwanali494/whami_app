@@ -13,143 +13,121 @@ class PositionOpinionCard extends StatelessWidget {
     final isUnavailable = opinion.status == 'unavailable';
     final isUnstable = opinion.status == 'unstable';
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isUnstable
-              ? AppColors.alertWarningBorder.withValues(alpha: 0.5)
-              : AppColors.divider,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Source badge
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: isUnavailable
-                  ? Colors.grey.withValues(alpha: 0.15)
-                  : color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isUnavailable ? Colors.grey : color,
-                width: 1.5,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                opinion.shortCode,
-                style: TextStyle(
-                  color: isUnavailable ? Colors.grey : color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
+    return Semantics(
+      label:
+          '${opinion.name}: ${isUnavailable ? "unavailable" : "${opinion.confidence} percent, ${opinion.description}"}',
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 56),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color ?? AppColors.cardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isUnstable
+                ? AppColors.trustMediumDark.withValues(alpha: 0.5)
+                : AppColors.divider,
           ),
-          const SizedBox(width: 12),
-          // Name + description
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      opinion.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: isUnavailable
-                            ? AppColors.textSecondary
-                            : AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    if (isUnstable)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.alertWarning,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'UNSTABLE',
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: Color(0xFFE65100),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    if (isUnavailable)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEEEEEE),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'UNAVAIL.',
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: Colors.grey,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                  ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isUnavailable
+                    ? Colors.grey.withValues(alpha: 0.15)
+                    : color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isUnavailable ? Colors.grey : color,
+                  width: 1.5,
                 ),
-                const SizedBox(height: 2),
+              ),
+              child: Center(
+                child: Text(
+                  opinion.shortCode,
+                  style: TextStyle(
+                    color: isUnavailable ? Colors.grey : color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          opinion.name,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: isUnavailable
+                                ? AppColors.textSecondary
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      if (isUnstable)
+                        _StatusChip(
+                          label: 'UNSTABLE',
+                          fg: const Color(0xFFE65100),
+                          bg: AppColors.alertWarning,
+                        ),
+                      if (isUnavailable)
+                        const _StatusChip(
+                          label: 'OFFLINE',
+                          fg: Colors.grey,
+                          bg: Color(0xFFEEEEEE),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isUnavailable ? 'No signal' : opinion.description,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
                 Text(
-                  isUnavailable ? 'No signal' : opinion.description,
+                  isUnavailable ? '—' : '${opinion.confidence}%',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: isUnavailable
+                        ? Colors.grey
+                        : AppColors.forTrust(opinion.confidence),
+                  ),
+                ),
+                Text(
+                  isUnavailable
+                      ? 'offline'
+                      : '±${_formatRadius(opinion.uncertaintyRadius)}',
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     color: AppColors.textSecondary,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          // Confidence
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                isUnavailable ? '—' : '${opinion.confidence}%',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: isUnavailable
-                      ? Colors.grey
-                      : AppColors.forTrust(opinion.confidence),
-                ),
-              ),
-              Text(
-                isUnavailable
-                    ? 'offline'
-                    : '±${_formatRadius(opinion.uncertaintyRadius)}',
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -159,5 +137,36 @@ class PositionOpinionCard extends StatelessWidget {
       return '${(meters / 1000).toStringAsFixed(1)}km';
     }
     return '${meters.round()}m';
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final Color fg;
+  final Color bg;
+
+  const _StatusChip({
+    required this.label,
+    required this.fg,
+    required this.bg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: fg,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 }

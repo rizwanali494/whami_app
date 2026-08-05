@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'core/preferences/app_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'navigation/whami_router.dart';
 
@@ -7,22 +9,33 @@ class WhamiApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'WHAMI',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.theme,
-      routerConfig: whamiRouter,
-      builder: (context, child) {
-        return Container(
-          color: const Color(0xFF0D1117),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 390),
-              child: ClipRect(child: child ?? const SizedBox.shrink()),
-            ),
-          ),
-        );
-      },
+    return ChangeNotifierProvider<AppPreferences>.value(
+      value: appPreferences,
+      child: Consumer<AppPreferences>(
+        builder: (context, prefs, _) {
+          return MaterialApp.router(
+            title: 'WHAMI',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.theme,
+            darkTheme: AppTheme.outdoorTheme,
+            themeMode:
+                prefs.outdoorMode ? ThemeMode.dark : ThemeMode.light,
+            routerConfig: whamiRouter,
+            builder: (context, child) {
+              // Respect system text scaling up to 200% for outdoor readability.
+              final mq = MediaQuery.of(context);
+              final clamped = mq.textScaler.clamp(
+                minScaleFactor: 1.0,
+                maxScaleFactor: 2.0,
+              );
+              return MediaQuery(
+                data: mq.copyWith(textScaler: clamped),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/widgets/status_panel.dart';
 import '../../data/repositories/whami_repository.dart';
 import 'widgets/alert_event_card.dart';
 
@@ -10,110 +11,103 @@ class AlertsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final events = repository.getTrustEvents();
-    final criticalCount = events.where((e) => e.severity == 'critical').length;
-    final warningCount = events.where((e) => e.severity == 'warning').length;
+    return AnimatedBuilder(
+      animation: repository,
+      builder: (context, _) {
+        final events = repository.getTrustEvents();
+        final criticalCount =
+            events.where((e) => e.severity == 'critical').length;
+        final warningCount =
+            events.where((e) => e.severity == 'warning').length;
+        final live = events
+            .where((e) =>
+                e.isOngoing &&
+                (e.severity == 'warning' || e.severity == 'critical'))
+            .toList();
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            backgroundColor: AppColors.headerBg,
-            pinned: true,
-            title: const Text(
-              'Alerts & History',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+        return Scaffold(
+          body: CustomScrollView(
+            slivers: [
+              const SliverAppBar(
+                pinned: true,
+                title: Text('Activity'),
               ),
-            ),
-            actions: [
-              if (criticalCount > 0)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Chip(
-                    backgroundColor: AppColors.alertCritical,
-                    label: Text(
-                      '$criticalCount Critical',
-                      style: const TextStyle(
-                        color: AppColors.alertCriticalBorder,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          _SummaryChip(
+                            count: criticalCount,
+                            label: 'Critical',
+                            color: AppColors.alertCriticalBorder,
+                            bg: AppColors.alertCritical,
+                          ),
+                          const SizedBox(width: 10),
+                          _SummaryChip(
+                            count: warningCount,
+                            label: 'Warning',
+                            color: AppColors.trustMediumDark,
+                            bg: AppColors.alertWarning,
+                          ),
+                          const SizedBox(width: 10),
+                          _SummaryChip(
+                            count:
+                                events.length - criticalCount - warningCount,
+                            label: 'Info',
+                            color: AppColors.alertInfoBorder,
+                            bg: AppColors.alertInfo,
+                          ),
+                        ],
                       ),
                     ),
-                    padding: EdgeInsets.zero,
-                  ),
-                ),
-              if (warningCount > 0)
-                Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: Chip(
-                    backgroundColor: AppColors.alertWarning,
-                    label: Text(
-                      '$warningCount Warning',
-                      style: const TextStyle(
-                        color: AppColors.alertWarningBorder,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                    if (live.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Text(
+                          'Needs attention',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      ...live.map((e) => AlertEventCard(event: e)),
+                      const SizedBox(height: 8),
+                    ],
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        'History',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textSecondary,
+                          letterSpacing: 0.8,
+                        ),
                       ),
                     ),
-                    padding: EdgeInsets.zero,
-                  ),
+                    if (events.isEmpty)
+                      StatusPanel.empty(
+                        title: 'No trust history yet',
+                        message:
+                            'Start tracking on Map to record consensus changes, GPS events, and verifies.',
+                      )
+                    else
+                      ...events.map((e) => AlertEventCard(event: e)),
+                    const SizedBox(height: 24),
+                  ],
                 ),
+              ),
             ],
           ),
-          SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Summary bar
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      _SummaryChip(
-                        count: criticalCount,
-                        label: 'Critical',
-                        color: AppColors.alertCriticalBorder,
-                        bg: AppColors.alertCritical,
-                      ),
-                      const SizedBox(width: 10),
-                      _SummaryChip(
-                        count: warningCount,
-                        label: 'Warning',
-                        color: AppColors.alertWarningBorder,
-                        bg: AppColors.alertWarning,
-                      ),
-                      const SizedBox(width: 10),
-                      _SummaryChip(
-                        count: events.length - criticalCount - warningCount,
-                        label: 'Info',
-                        color: AppColors.alertInfoBorder,
-                        bg: AppColors.alertInfo,
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Text(
-                    'Recent Trust Events',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ),
-                ...events.map((e) => AlertEventCard(event: e)),
-                const SizedBox(height: 24),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -135,6 +129,7 @@ class _SummaryChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
+        constraints: const BoxConstraints(minHeight: 64),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
           color: bg,
@@ -154,9 +149,9 @@ class _SummaryChip extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 color: color,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

@@ -49,6 +49,7 @@ dependencies:
 
   # Archive handling for extraction
   archive: ^4.0.4
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
@@ -58,6 +59,12 @@ dev_dependencies:
   plugin_platform_interface: ^2.1.8
   test: ^1.25.0
   flutter_native_splash: ^2.4.4
+
+# package_info_plus 10.x fails to expose PackageInfoPlugin to the app module
+# under AGP 8.11 (cannot find symbol in GeneratedPluginRegistrant). Geolocator
+# still pulls it in transitively — pin a working Android build.
+dependency_overrides:
+  package_info_plus: 8.3.1
 
 flutter:
   uses-material-design: true

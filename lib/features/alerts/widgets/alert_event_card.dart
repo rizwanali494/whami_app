@@ -9,39 +9,65 @@ class AlertEventCard extends StatelessWidget {
 
   IconData _iconFor(String name) {
     switch (name) {
-      case 'gps_off': return Icons.gps_off;
-      case 'location_on': return Icons.location_on;
-      case 'explore_off': return Icons.explore_off;
-      case 'inventory_2': return Icons.inventory_2;
-      case 'wb_sunny': return Icons.wb_sunny;
-      case 'directions_walk': return Icons.directions_walk;
-      case 'satellite_alt': return Icons.satellite_alt;
-      case 'shield': return Icons.shield;
-      default: return Icons.notifications;
+      case 'gps_off':
+        return Icons.gps_off;
+      case 'gps_fixed':
+        return Icons.gps_fixed;
+      case 'location_on':
+        return Icons.location_on;
+      case 'explore_off':
+        return Icons.explore_off;
+      case 'inventory_2':
+        return Icons.inventory_2;
+      case 'wb_sunny':
+        return Icons.wb_sunny;
+      case 'directions_walk':
+        return Icons.directions_walk;
+      case 'satellite_alt':
+        return Icons.satellite_alt;
+      case 'shield':
+        return Icons.shield;
+      case 'play_arrow':
+        return Icons.play_arrow;
+      case 'stop':
+        return Icons.stop;
+      case 'warning':
+        return Icons.warning_amber_rounded;
+      default:
+        return Icons.notifications;
     }
   }
 
   Color _severityColor(String severity) {
     switch (severity) {
-      case 'critical': return AppColors.alertCriticalBorder;
-      case 'warning': return AppColors.alertWarningBorder;
-      default: return AppColors.alertInfoBorder;
+      case 'critical':
+        return AppColors.alertCriticalBorder;
+      case 'warning':
+        return AppColors.trustMediumDark;
+      default:
+        return AppColors.alertInfoBorder;
     }
   }
 
   Color _severityBg(String severity) {
     switch (severity) {
-      case 'critical': return AppColors.alertCritical;
-      case 'warning': return AppColors.alertWarning;
-      default: return AppColors.alertInfo;
+      case 'critical':
+        return AppColors.alertCritical;
+      case 'warning':
+        return AppColors.alertWarning;
+      default:
+        return AppColors.alertInfo;
     }
   }
 
   String _severityLabel(String severity) {
     switch (severity) {
-      case 'critical': return 'CRITICAL';
-      case 'warning': return 'WARNING';
-      default: return 'INFO';
+      case 'critical':
+        return 'CRITICAL';
+      case 'warning':
+        return 'WARNING';
+      default:
+        return 'INFO';
     }
   }
 
@@ -49,6 +75,7 @@ class AlertEventCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _severityColor(event.severity);
     final bg = _severityBg(event.severity);
+    final actionable = event.severity == 'warning' || event.severity == 'critical';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -57,16 +84,15 @@ class AlertEventCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Icon
             Container(
-              width: 42,
-              height: 42,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: color.withValues(alpha: 0.4)),
               ),
-              child: Icon(_iconFor(event.iconName), color: color, size: 22),
+              child: Icon(_iconFor(event.iconName), color: color, size: 24),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -80,24 +106,28 @@ class AlertEventCard extends StatelessWidget {
                           event.title,
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                            fontSize: 15,
                             color: AppColors.textPrimary,
                           ),
                         ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: bg,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: color.withValues(alpha: 0.5)),
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.5),
+                          ),
                         ),
                         child: Text(
                           _severityLabel(event.severity),
                           style: TextStyle(
                             color: color,
-                            fontSize: 9,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 0.5,
                           ),
@@ -105,23 +135,35 @@ class AlertEventCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   Text(
-                    event.timeAgo,
+                    '${event.timeAgo} · ${event.isOngoing ? "Ongoing" : "Resolved"}',
                     style: const TextStyle(
-                      fontSize: 11,
+                      fontSize: 13,
                       color: AppColors.textSecondary,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Text(
                     event.description,
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
                       height: 1.4,
                     ),
                   ),
+                  if (event.actionHint != null && actionable) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      event.actionHint!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

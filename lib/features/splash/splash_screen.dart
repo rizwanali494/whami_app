@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/preferences/app_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -46,7 +47,12 @@ class _SplashScreenState extends State<SplashScreen>
     _controller.forward();
 
     Future.delayed(const Duration(milliseconds: 2600), () {
-      if (mounted) context.go('/map');
+      if (!mounted) return;
+      if (!appPreferences.onboardingSeen) {
+        context.go('/onboarding');
+      } else {
+        context.go('/map');
+      }
     });
   }
 

@@ -4,11 +4,13 @@ import '../../../core/constants/app_colors.dart';
 class MapLayerControl extends StatefulWidget {
   final Map<String, bool> layerVisibility;
   final Function(String key, bool visible) onLayerToggled;
+  final bool lightStyle;
 
   const MapLayerControl({
     super.key,
     required this.layerVisibility,
     required this.onLayerToggled,
+    this.lightStyle = false,
   });
 
   @override
@@ -28,7 +30,7 @@ class _MapLayerControlState extends State<MapLayerControl> {
       children: [
         if (_expanded)
           Card(
-            color: AppColors.headerBg,
+            color: widget.lightStyle ? Colors.white : AppColors.headerBg,
             elevation: 8,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -79,37 +81,62 @@ class _MapLayerControlState extends State<MapLayerControl> {
             ),
           ),
         const SizedBox(height: 8),
-        FloatingActionButton.small(
-          heroTag: 'map_layers_fab',
-          onPressed: () => setState(() => _expanded = !_expanded),
-          backgroundColor: _expanded ? AppColors.whami : AppColors.headerBg,
-          child: Badge(
-            isLabelVisible: !_expanded && activeCount > 0,
-            label: Text(
-              '$activeCount',
-              style: const TextStyle(
-                color: AppColors.headerBg,
-                fontWeight: FontWeight.bold,
-                fontSize: 8,
+        if (widget.lightStyle)
+          Material(
+            color: Colors.white,
+            elevation: 3,
+            shadowColor: Colors.black26,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: Icon(
+                  Icons.layers_outlined,
+                  color: _expanded ? AppColors.whami : AppColors.headerBg,
+                  size: 22,
+                ),
               ),
             ),
-            backgroundColor: AppColors.whami,
-            child: Icon(
-              Icons.layers,
-              color: _expanded ? AppColors.headerBg : Colors.white,
-              size: 20,
+          )
+        else
+          FloatingActionButton.small(
+            heroTag: 'map_layers_fab',
+            onPressed: () => setState(() => _expanded = !_expanded),
+            backgroundColor: _expanded ? AppColors.whami : AppColors.headerBg,
+            child: Badge(
+              isLabelVisible: !_expanded && activeCount > 0,
+              label: Text(
+                '$activeCount',
+                style: const TextStyle(
+                  color: AppColors.headerBg,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 8,
+                ),
+              ),
+              backgroundColor: AppColors.whami,
+              child: Icon(
+                Icons.layers,
+                color: _expanded ? AppColors.headerBg : Colors.white,
+                size: 20,
+              ),
             ),
           ),
-        ),
       ],
     );
   }
 
   Widget _buildToggleRow(String key, String label, IconData icon, Color color) {
     final isVisible = widget.layerVisibility[key] ?? true;
+    final light = widget.lightStyle;
+    final textColor = light
+        ? (isVisible ? AppColors.headerBg : AppColors.textSecondary)
+        : (isVisible ? Colors.white : Colors.white54);
 
     return Theme(
-      data: ThemeData.dark(),
+      data: light ? ThemeData.light() : ThemeData.dark(),
       child: CheckboxListTile(
         value: isVisible,
         onChanged: (val) => widget.onLayerToggled(key, val ?? false),
@@ -121,14 +148,14 @@ class _MapLayerControlState extends State<MapLayerControl> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         secondary: Icon(
           icon,
-          color: isVisible ? color : Colors.white54,
+          color: isVisible ? color : (light ? Colors.black38 : Colors.white54),
           size: 18,
         ),
         title: Text(
           label,
           style: TextStyle(
-            color: isVisible ? Colors.white : Colors.white54,
-            fontSize: 11,
+            color: textColor,
+            fontSize: 12,
             fontWeight: isVisible ? FontWeight.bold : FontWeight.normal,
           ),
         ),

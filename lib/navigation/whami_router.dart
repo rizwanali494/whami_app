@@ -23,12 +23,13 @@ import '../data/services/trust_fusion_engine.dart';
 import '../data/services/trust_event_log.dart';
 import '../features/map/map_screen.dart';
 import '../features/scan/scan_screen.dart';
-import '../features/sensors/sensors_screen.dart';
 import '../features/region_packs/region_pack_screen.dart';
 import '../features/alerts/alerts_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/splash/splash_screen.dart';
+import '../features/onboarding/onboarding_screen.dart';
 import '../core/constants/app_colors.dart';
+import '../core/preferences/app_preferences.dart';
 import '../core/widgets/offline_banner.dart';
 
 final gpsService = GpsService();
@@ -47,16 +48,19 @@ final sensorManager = SensorManager(
   skyService: skyService,
 );
 
-final rasterTileCacheService = RasterTileCacheService()..start();
-final glyphServer = GlyphServer()..start();
+final rasterTileCacheService = RasterTileCacheService();
+final glyphServer = GlyphServer();
 
 final storage = RegionPackStorage();
 final downloadEngine = DownloadEngine(storage: storage);
 final landmarkDatabase = LandmarkDatabase();
-final regionEngine = RegionEngine(storage: storage, landmarkDatabase: landmarkDatabase);
-final landmarkEngine = LandmarkEngine(regionEngine: regionEngine, db: landmarkDatabase);
+final regionEngine =
+    RegionEngine(storage: storage, landmarkDatabase: landmarkDatabase);
+final landmarkEngine =
+    LandmarkEngine(regionEngine: regionEngine, db: landmarkDatabase);
 
-final regionRepo = RegionRepository(regionEngine: regionEngine, downloadEngine: downloadEngine);
+final regionRepo =
+    RegionRepository(regionEngine: regionEngine, downloadEngine: downloadEngine);
 final landmarkRepo = LandmarkRepository(landmarkEngine: landmarkEngine);
 final mapRepo = MapRepository();
 
@@ -76,13 +80,31 @@ final whamiRepo = WhamiRepository(
   glyphServer: glyphServer,
 );
 
+/// Starts long-lived local servers after Flutter binding is ready.
+Future<void> bootstrapWhamiServices() async {
+  await rasterTileCacheService.start();
+  await glyphServer.start();
+}
+
 final whamiRouter = GoRouter(
   initialLocation: '/',
+  refreshListenable: appPreferences,
+  redirect: (context, state) {
+    if (!appPreferences.isReady) return null;
+    final loc = state.matchedLocation;
+    if (!appPreferences.onboardingSeen &&
+        loc != '/onboarding' &&
+        loc != '/') {
+      return '/onboarding';
+    }
+    return null;
+  },
   routes: [
-    // Splash screen — navigates to /map after delay
     GoRoute(path: '/', builder: (_, __) => const SplashScreen()),
-
-    // Main shell with bottom navigation
+    GoRoute(
+      path: '/onboarding',
+      builder: (_, __) => const OnboardingScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           _WhamiShell(shell: navigationShell),
@@ -98,7 +120,7 @@ final whamiRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/scan',
+              path: '/verify',
               builder: (_, __) => ScanScreen(repository: whamiRepo),
             ),
           ],
@@ -106,99 +128,95 @@ final whamiRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/sensors',
-              builder: (_, __) => SensorsScreen(repository: whamiRepo),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
               path: '/packs',
-              builder: (_, __) => RegionPackScreen(repository: whamiRepo),
+              builder: (_, __) =>
+                  RegionPackScreen(repository: whamiRepo),
             ),
           ],
         ),
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/alerts',
+              path: '/activity',
               builder: (_, __) => AlertsScreen(repository: whamiRepo),
             ),
           ],
         ),
       ],
     ),
-
-    // Settings — accessible via FAB from any screen
     GoRoute(
       path: '/settings',
       builder: (_, __) => SettingsScreen(repository: whamiRepo),
     ),
+    // Legacy path redirects
+    GoRoute(path: '/scan', redirect: (_, __) => '/verify'),
+    GoRoute(path: '/alerts', redirect: (_, __) => '/activity'),
+    GoRoute(path: '/sensors', redirect: (_, __) => '/settings'),
   ],
 );
 
-// ── Shell scaffold with bottom navigation ────────────────────────────────────
-
-class _WhamiShell extends StatefulWidget {
+class _WhamiShell extends StatelessWidget {
   final StatefulNavigationShell shell;
 
   const _WhamiShell({required this.shell});
 
   @override
-  State<_WhamiShell> createState() => _WhamiShellState();
-}
-
-class _WhamiShellState extends State<_WhamiShell> {
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: widget.shell,
+      body: shell,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           OfflineBanner(repository: whamiRepo),
-          BottomNavigationBar(
-            currentIndex: widget.shell.currentIndex,
-            onTap: (index) => widget.shell.goBranch(
-              index,
-              initialLocation: index == widget.shell.currentIndex,
+          NavigationBarTheme(
+            data: NavigationBarThemeData(
+              backgroundColor: AppColors.headerBg,
+              indicatorColor: AppColors.whami.withValues(alpha: 0.22),
+              labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                final selected = states.contains(WidgetState.selected);
+                return TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? AppColors.whami : const Color(0xFF90A4AE),
+                );
+              }),
             ),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.map_outlined),
-                activeIcon: Icon(Icons.map),
-                label: 'Map',
+            child: NavigationBar(
+              height: 68,
+              backgroundColor: AppColors.headerBg,
+              indicatorColor: AppColors.whami.withValues(alpha: 0.22),
+              selectedIndex: shell.currentIndex,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              onDestinationSelected: (index) => shell.goBranch(
+                index,
+                initialLocation: index == shell.currentIndex,
               ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.document_scanner_outlined),
-                activeIcon: Icon(Icons.document_scanner),
-                label: 'Scan',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.sensors_outlined),
-                activeIcon: Icon(Icons.sensors),
-                label: 'Sensors',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.inventory_2_outlined),
-                activeIcon: Icon(Icons.inventory_2),
-                label: 'Packs',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.notifications_outlined),
-                activeIcon: Icon(Icons.notifications),
-                label: 'Alerts',
-              ),
-            ],
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.map_outlined, color: Color(0xFF90A4AE)),
+                  selectedIcon: Icon(Icons.map, color: AppColors.whami),
+                  label: 'Map',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.verified_outlined, color: Color(0xFF90A4AE)),
+                  selectedIcon: Icon(Icons.verified, color: AppColors.whami),
+                  label: 'Verify',
+                ),
+                NavigationDestination(
+                  icon:
+                      Icon(Icons.offline_pin_outlined, color: Color(0xFF90A4AE)),
+                  selectedIcon: Icon(Icons.offline_pin, color: AppColors.whami),
+                  label: 'Offline',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.history, color: Color(0xFF90A4AE)),
+                  selectedIcon: Icon(Icons.history, color: AppColors.whami),
+                  label: 'Activity',
+                ),
+              ],
+            ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: () => context.push('/settings'),
-        backgroundColor: AppColors.headerBg,
-        tooltip: 'Trust Details & Settings',
-        child: const Icon(Icons.settings, color: Colors.white, size: 20),
       ),
     );
   }

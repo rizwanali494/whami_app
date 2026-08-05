@@ -19,7 +19,7 @@ class ScanScreen extends StatelessWidget {
           backgroundColor: AppColors.headerBg,
           automaticallyImplyLeading: false,
           title: const Text(
-            'Scan',
+            'Verify',
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,

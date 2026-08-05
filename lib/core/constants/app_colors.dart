@@ -24,7 +24,15 @@ class AppColors {
   // Trust score gradient
   static const Color trustHigh = Color(0xFF43A047);
   static const Color trustMedium = Color(0xFFFFC107);
+  /// Darker amber for text on light backgrounds (WCAG-friendlier than raw amber).
+  static const Color trustMediumDark = Color(0xFFB28704);
   static const Color trustLow = Color(0xFFE53935);
+
+  // Outdoor / high-contrast mode
+  static const Color outdoorBg = Color(0xFF0A1628);
+  static const Color outdoorCard = Color(0xFF152238);
+  static const Color outdoorText = Color(0xFFF5F7FA);
+  static const Color outdoorMuted = Color(0xFFB0BEC5);
 
   // UI
   static const Color textPrimary = Color(0xFF0A1628);
@@ -63,7 +71,7 @@ class AppColors {
 
   static Color forTrust(int trust) {
     if (trust >= 75) return trustHigh;
-    if (trust >= 55) return trustMedium;
+    if (trust >= 55) return trustMediumDark;
     return trustLow;
   }
 }

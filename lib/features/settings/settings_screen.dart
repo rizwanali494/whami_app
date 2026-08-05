@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_version.dart';
 import '../../core/constants/connectivity_status.dart';
+import '../../core/preferences/app_preferences.dart';
+import '../../core/trust/trust_summary.dart';
+import '../../core/widgets/status_panel.dart';
 import '../../data/repositories/whami_repository.dart';
+import '../sensors/sensors_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final WhamiRepository repository;
@@ -13,8 +20,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _useMetric = true;
-
   void _refresh() => setState(() {});
 
   @override
@@ -29,70 +34,225 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
+  Future<void> _showStorageSheet() async {
+    final packs = widget.repository.packs
+        .where((p) => p.status == 'downloaded')
+        .toList();
+    final totalBytes = packs.fold<int>(0, (sum, p) {
+      final raw = p.size.replaceAll(RegExp(r'[^0-9.]'), '');
+      final n = double.tryParse(raw) ?? 0;
+      if (p.size.toLowerCase().contains('gb')) {
+        return sum + (n * 1024 * 1024 * 1024).round();
+      }
+      if (p.size.toLowerCase().contains('mb')) {
+        return sum + (n * 1024 * 1024).round();
+      }
+      return sum + n.round();
+    });
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Offline pack storage',
+                style: Theme.of(ctx).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                packs.isEmpty
+                    ? 'No packs downloaded yet. Open Offline to add region data.'
+                    : '${packs.length} pack(s) installed · ~${_formatBytes(totalBytes)} used',
+                style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              if (packs.isEmpty)
+                StatusPanel.empty(
+                  title: 'Nothing stored offline',
+                  message: 'Downloaded region packs appear here with size estimates.',
+                  actionLabel: 'Go to Offline',
+                  onAction: () {
+                    Navigator.pop(ctx);
+                    context.go('/packs');
+                  },
+                )
+              else
+                ...packs.map(
+                  (p) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.inventory_2_outlined),
+                    title: Text(p.name, style: const TextStyle(fontSize: 14)),
+                    subtitle: Text(p.size, style: const TextStyle(fontSize: 13)),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    context.go('/packs');
+                  },
+                  child: const Text('Manage offline packs'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showPrivacySheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Privacy', style: Theme.of(ctx).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              const Text(
+                'Position fusion runs on-device. Sensor streams and region packs '
+                'stay local unless you choose to download packs from the catalog CDN.',
+                style: TextStyle(fontSize: 14, height: 1.45),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Camera frames used for Verify stay on the device and are not uploaded.',
+                style: TextStyle(fontSize: 14, height: 1.45),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Got it'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 MB';
+    if (bytes >= 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
+  }
+
   @override
   Widget build(BuildContext context) {
     final breakdown = widget.repository.getTrustBreakdown();
+    final prefs = context.watch<AppPreferences>();
+    final summary = TrustSummary.fromOpinions(
+      trustScore: breakdown['finalScore'] as int? ?? widget.repository.trustScore,
+      opinions: widget.repository.getPositionOpinions(),
+      isTracking: widget.repository.isTracking,
+    );
 
     return Scaffold(
-      backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            backgroundColor: AppColors.headerBg,
             pinned: true,
-            title: const Text(
-              'Trust Details & Settings',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            title: const Text('Diagnostics & Settings'),
           ),
           SliverToBoxAdapter(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 12),
-
-                // Trust formula card
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _TrustFormulaCard(breakdown: breakdown),
+                  child: _TrustPlainCard(summary: summary, breakdown: breakdown),
                 ),
-
                 const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Text(
-                    'Settings',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.8,
-                    ),
+                const _SectionLabel('Diagnostics'),
+                Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.sensors, color: AppColors.imu),
+                        title: const Text('Sensors', style: TextStyle(fontSize: 15)),
+                        subtitle: const Text(
+                          'GPS, magnetometer, IMU, barometer health',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => SensorsScreen(
+                                repository: widget.repository,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1, indent: 16),
+                      SwitchListTile(
+                        secondary: const Icon(
+                          Icons.wb_sunny_outlined,
+                          color: AppColors.whami,
+                        ),
+                        title: const Text(
+                          'Outdoor / high-contrast mode',
+                          style: TextStyle(fontSize: 15),
+                        ),
+                        subtitle: const Text(
+                          'Dark map chrome for bright sunlight',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        value: prefs.outdoorMode,
+                        onChanged: prefs.setOutdoorMode,
+                      ),
+                    ],
                   ),
                 ),
-
+                const SizedBox(height: 16),
+                const _SectionLabel('Settings'),
                 Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
                     children: [
                       ListTile(
                         leading: const Icon(Icons.wifi, color: AppColors.gps),
-                        title: const Text('Connectivity Mode'),
+                        title: const Text(
+                          'Connectivity Mode',
+                          style: TextStyle(fontSize: 15),
+                        ),
                         subtitle: Text(
-                          widget.repository.connectivityMode == ConnectivityMode.online
+                          widget.repository.connectivityMode ==
+                                  ConnectivityMode.online
                               ? 'Online (All sources active)'
-                              : widget.repository.connectivityMode == ConnectivityMode.offline
+                              : widget.repository.connectivityMode ==
+                                      ConnectivityMode.offline
                                   ? 'Offline (Local pack verified)'
-                                  : 'Limited (GPS only, pack disabled)'
+                                  : 'Limited (GPS only, pack disabled)',
+                          style: const TextStyle(fontSize: 13),
                         ),
                         trailing: DropdownButton<ConnectivityMode>(
                           value: widget.repository.connectivityMode,
                           underline: const SizedBox.shrink(),
-                          dropdownColor: AppColors.headerBg,
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
                           onChanged: (mode) {
                             if (mode != null) {
                               widget.repository.connectivityMode = mode;
@@ -101,147 +261,123 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           items: const [
                             DropdownMenuItem(
                               value: ConnectivityMode.online,
-                              child: Text('Online', style: TextStyle(color: Colors.white)),
+                              child: Text('Online'),
                             ),
                             DropdownMenuItem(
                               value: ConnectivityMode.offline,
-                              child: Text('Offline', style: TextStyle(color: Colors.white)),
+                              child: Text('Offline'),
                             ),
                             DropdownMenuItem(
                               value: ConnectivityMode.limited,
-                              child: Text('Limited', style: TextStyle(color: Colors.white)),
+                              child: Text('Limited'),
                             ),
                           ],
                         ),
                       ),
                       const Divider(height: 1, indent: 16),
-                      ListTile(
-                        leading: const Icon(Icons.info_outline, color: AppColors.gps),
-                        title: const Text('App Mode'),
-                        subtitle: const Text('Live Sensors (Offline Focused)'),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.trustHigh.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppColors.trustHigh.withValues(alpha: 0.4)),
-                          ),
-                          child: const Text(
-                            'LIVE',
-                            style: TextStyle(
-                              color: AppColors.trustHigh,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const Divider(height: 1, indent: 16),
                       SwitchListTile(
-                        secondary: const Icon(Icons.straighten, color: AppColors.imu),
-                        title: const Text('Units'),
-                        subtitle: Text(_useMetric ? 'Metric (m, km)' : 'Imperial (ft, mi)'),
-                        value: _useMetric,
-                        activeThumbColor: AppColors.headerBg,
-                        onChanged: (val) => setState(() => _useMetric = val),
+                        secondary: const Icon(
+                          Icons.straighten,
+                          color: AppColors.imu,
+                        ),
+                        title: const Text('Units', style: TextStyle(fontSize: 15)),
+                        subtitle: Text(
+                          prefs.useMetric ? 'Metric (m, km)' : 'Imperial (ft, mi)',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        value: prefs.useMetric,
+                        onChanged: prefs.setUseMetric,
                       ),
                       const Divider(height: 1, indent: 16),
                       ListTile(
-                        leading: const Icon(Icons.storage, color: AppColors.sextant),
-                        title: const Text('Offline Pack Storage'),
-                        subtitle: const Text('142 MB / 2.0 GB used'),
+                        leading: const Icon(
+                          Icons.storage,
+                          color: AppColors.sextant,
+                        ),
+                        title: const Text(
+                          'Offline Pack Storage',
+                          style: TextStyle(fontSize: 15),
+                        ),
+                        subtitle: const Text(
+                          'View downloaded packs and usage',
+                          style: TextStyle(fontSize: 13),
+                        ),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () {},
+                        onTap: _showStorageSheet,
                       ),
                       const Divider(height: 1, indent: 16),
                       ListTile(
-                        leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.magnetic),
-                        title: const Text('Privacy'),
-                        subtitle: const Text('No data leaves your device in prototype mode'),
+                        leading: const Icon(
+                          Icons.privacy_tip_outlined,
+                          color: AppColors.magnetic,
+                        ),
+                        title: const Text(
+                          'Privacy',
+                          style: TextStyle(fontSize: 15),
+                        ),
+                        subtitle: const Text(
+                          'On-device fusion · optional CDN downloads',
+                          style: TextStyle(fontSize: 13),
+                        ),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () {},
+                        onTap: _showPrivacySheet,
+                      ),
+                      const Divider(height: 1, indent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.school_outlined),
+                        title: const Text(
+                          'Show onboarding again',
+                          style: TextStyle(fontSize: 15),
+                        ),
+                        onTap: () async {
+                          await prefs.setOnboardingSeen(false);
+                          if (context.mounted) context.go('/onboarding');
+                        },
                       ),
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 16),
+                const _SectionLabel('Disclaimer'),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Text(
-                    'Disclaimer',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: AppColors.alertWarning,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: AppColors.alertWarningBorder.withValues(alpha: 0.4),
+                        color: AppColors.trustMediumDark.withValues(alpha: 0.45),
                       ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: const [
-                            Icon(Icons.warning_amber_rounded,
-                                color: AppColors.alertWarningBorder, size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              'Important Disclaimer',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'WHAMI provides a verified position estimate based on multiple device '
-                          'sensors and offline data sources. It is intended as a navigation '
-                          'confidence and redundancy layer. It should not be used as the sole '
-                          'source of navigation in safety-critical marine, aviation, rescue, or '
-                          'vehicle operations unless certified for that specific use case.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textPrimary,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
+                    child: const Text(
+                      'WHAMI provides a verified position estimate based on multiple device '
+                      'sensors and offline data sources. It is a navigation aid — not the sole '
+                      'source of navigation for safety-critical operations unless certified.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                        height: 1.45,
+                      ),
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 Center(
                   child: Column(
-                    children: const [
+                    children: [
                       Text(
-                        'WHAMI v0.1.0 — Prototype',
-                        style: TextStyle(
-                          fontSize: 11,
+                        AppVersion.label,
+                        style: const TextStyle(
+                          fontSize: 13,
                           color: AppColors.textSecondary,
                         ),
                       ),
-                      SizedBox(height: 2),
-                      Text(
+                      const SizedBox(height: 4),
+                      const Text(
                         '"GPS is only one witness."',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 13,
                           color: AppColors.textSecondary,
                           fontStyle: FontStyle.italic,
                         ),
@@ -249,7 +385,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
               ],
             ),
           ),
@@ -259,14 +395,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-class _TrustFormulaCard extends StatelessWidget {
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: AppColors.textSecondary,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+}
+
+class _TrustPlainCard extends StatelessWidget {
+  final TrustSummary summary;
   final Map<String, dynamic> breakdown;
 
-  const _TrustFormulaCard({required this.breakdown});
+  const _TrustPlainCard({required this.summary, required this.breakdown});
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -274,89 +433,52 @@ class _TrustFormulaCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.calculate, color: AppColors.headerBg, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  'Trust Score Breakdown',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
+                Icon(summary.level.icon, color: summary.level.color, size: 26),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    summary.headline,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      color: summary.level.color,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.forTrust(breakdown['finalScore'] as int)
-                        .withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: AppColors.forTrust(breakdown['finalScore'] as int),
-                    ),
-                  ),
-                  child: Text(
-                    '${breakdown['finalScore']}%',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: AppColors.forTrust(breakdown['finalScore'] as int),
-                    ),
+                Text(
+                  '${summary.score}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                    color: summary.level.color,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Trust = 0.45×Landmark + 0.20×GPS + 0.15×Magnetic + 0.10×IMU + 0.10×Sky',
-              style: TextStyle(
-                fontSize: 11,
-                fontFamily: 'monospace',
-                color: AppColors.textSecondary,
+            const SizedBox(height: 8),
+            Text(summary.subtitle, style: const TextStyle(fontSize: 14)),
+            const SizedBox(height: 8),
+            Text(summary.explanation, style: const TextStyle(fontSize: 14, height: 1.4)),
+            const SizedBox(height: 6),
+            Text(
+              'What to do: ${summary.action}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
               ),
             ),
             const SizedBox(height: 14),
-            _FormulaRow(
-              label: 'Landmark Match',
-              value: breakdown['landmarkMatch'] as int,
-              weight: '× 0.45',
-              color: AppColors.landmark,
-            ),
-            _FormulaRow(
-              label: 'GPS Confidence',
-              value: breakdown['gpsConfidence'] as int,
-              weight: '× 0.20',
-              color: AppColors.gps,
-            ),
-            _FormulaRow(
-              label: 'Magnetic Fit',
-              value: breakdown['magneticFit'] as int,
-              weight: '× 0.15',
-              color: AppColors.magnetic,
-            ),
-            _FormulaRow(
-              label: 'IMU Path',
-              value: breakdown['imuPath'] as int,
-              weight: '× 0.10',
-              color: AppColors.imu,
-            ),
-            _FormulaRow(
-              label: 'Sky Stability',
-              value: breakdown['skyStability'] as int,
-              weight: '× 0.10',
-              color: AppColors.sextant,
-            ),
-            const Divider(height: 20),
             const Text(
-              'WHAMI gives higher weight to physical-world anchors like landmark/seamap. '
-              'GPS is useful but never treated as absolute authority.',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-                fontStyle: FontStyle.italic,
-                height: 1.4,
-              ),
+              'Trust = 0.45×Landmark + 0.20×GPS + 0.15×Magnetic + 0.10×IMU + 0.10×Sky',
+              style: TextStyle(fontSize: 12, fontFamily: 'monospace'),
             ),
+            const SizedBox(height: 10),
+            _MiniRow('Landmark', breakdown['landmarkMatch'] as int? ?? 0, AppColors.landmark),
+            _MiniRow('GPS', breakdown['gpsConfidence'] as int? ?? 0, AppColors.gps),
+            _MiniRow('Magnetic', breakdown['magneticFit'] as int? ?? 0, AppColors.magnetic),
+            _MiniRow('IMU', breakdown['imuPath'] as int? ?? 0, AppColors.imu),
+            _MiniRow('Sky', breakdown['skyStability'] as int? ?? 0, AppColors.sextant),
           ],
         ),
       ),
@@ -364,18 +486,12 @@ class _TrustFormulaCard extends StatelessWidget {
   }
 }
 
-class _FormulaRow extends StatelessWidget {
+class _MiniRow extends StatelessWidget {
   final String label;
   final int value;
-  final String weight;
   final Color color;
 
-  const _FormulaRow({
-    required this.label,
-    required this.value,
-    required this.weight,
-    required this.color,
-  });
+  const _MiniRow(this.label, this.value, this.color);
 
   @override
   Widget build(BuildContext context) {
@@ -389,44 +505,13 @@ class _FormulaRow extends StatelessWidget {
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
-            ),
-          ),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
           Text(
-            weight,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppColors.textSecondary,
-              fontFamily: 'monospace',
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 80,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: value / 100,
-                backgroundColor: AppColors.divider,
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-                minHeight: 6,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 32,
-            child: Text(
-              '$value%',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: AppColors.forTrust(value),
-              ),
-              textAlign: TextAlign.right,
+            '$value%',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: AppColors.forTrust(value),
             ),
           ),
         ],

@@ -81,7 +81,7 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
             backgroundColor: AppColors.headerBg,
             pinned: true,
             title: const Text(
-              'Region Packs',
+              'Offline',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,

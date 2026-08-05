@@ -329,9 +329,25 @@ class WhamiRepository extends ChangeNotifier {
         lMatch = _lastLandmarkMatch;
       }
 
-      // Perform expected WMM magnetic baseline comparisons if region has base grid
-      // For this refactor, we can pass null or generate temporary magnetic parameters
-      mMatch = null;
+      // Perform expected WMM magnetic baseline comparisons if region has base grid.
+      // When no offline magnetic GeoJSON is loaded, fall back to the live
+      // magnetometer baseline so magnetic remains a real witness in fusion.
+      if (magReading != null) {
+        final magService = _sensors.magnetometerService;
+        mMatch = MagneticMatch(
+          expectedStrength: magService.baselineStrength > 0
+              ? magService.baselineStrength
+              : 50.0,
+          stability: (magService.getConfidence() / 100).clamp(0.2, 1.0),
+          deviation: magService.baselineStrength > 0
+              ? (magReading.fieldStrength - magService.baselineStrength).abs()
+              : 0.0,
+        );
+      } else {
+        mMatch = null;
+      }
+      // Seamap matching requires offline channel geometry; keep null until pack
+      // exposes seamap GeoJSON through the region engine.
       sMatch = null;
     }
 

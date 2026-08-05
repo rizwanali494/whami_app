@@ -16,6 +16,8 @@ class TrustEventLog {
     required String description,
     required String severity, // info, warning, critical
     required String iconName,
+    String? actionHint,
+    bool isOngoing = false,
   }) {
     final event = TrustEvent(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -24,6 +26,8 @@ class TrustEventLog {
       timestamp: DateTime.now(),
       description: description,
       iconName: iconName,
+      actionHint: actionHint,
+      isOngoing: isOngoing,
     );
 
     _events.insert(0, event); // newest first

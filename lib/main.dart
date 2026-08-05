@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'app.dart';
+import 'core/preferences/app_preferences.dart';
 import 'navigation/whami_router.dart';
 
-void main() async {
+Future<void> main()
+async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize physical hardware sensors
+  await appPreferences.load();
+  await bootstrapWhamiServices();
+
+  // Initialize physical hardware sensors after services are up.
   await whamiRepo.sensors.initializeAll();
 
   // Start magnetometer stream immediately so readings flow from boot

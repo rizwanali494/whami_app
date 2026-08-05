@@ -37,48 +37,55 @@ class _PackFileExplorerState extends State<PackFileExplorer> {
     final pack = widget.pack;
     final fileSizes = pack.fileSizes;
 
-    // Define mock folder tree
-    final folders = [
-      _FolderItem(
-        path: '/maps',
-        name: 'Map Tiles',
-        desc: 'Offline base map vector tiles',
-        sizeKey: 'maps',
-        icon: Icons.map_outlined,
-        type: 'maps',
-      ),
-      _FolderItem(
-        path: '/marine',
-        name: 'Sea Charts',
-        desc: 'Offline seamaps and safety channels',
-        sizeKey: 'marine',
-        icon: Icons.water_outlined,
-        type: 'marine',
-      ),
-      _FolderItem(
-        path: '/landmarks',
-        name: 'Landmark Coordinates',
-        desc: 'Visual physical landmark targets',
-        sizeKey: 'landmarks',
-        icon: Icons.location_on_outlined,
-        type: 'landmarks',
-      ),
-      _FolderItem(
-        path: '/magnetic',
-        name: 'Magnetic Grid Readings',
-        desc: 'Offline magnetic anomaly reference grid',
-        sizeKey: 'magnetic',
-        icon: Icons.explore_outlined,
-        type: 'magnetic',
-      ),
-      _FolderItem(
-        path: '/celestial',
-        name: 'Celestial Tables',
-        desc: 'Sun, moon, and star alignment tables',
-        sizeKey: 'celestial',
-        icon: Icons.wb_sunny_outlined,
-        type: 'celestial',
-      ),
+    // Pack content folders derived from declared file sizes / metadata —
+    // only show folders that the pack actually reports.
+    final folders = <_FolderItem>[
+      if (fileSizes.containsKey('maps') || fileSizes.containsKey('map'))
+        _FolderItem(
+          path: '/maps',
+          name: 'Map Tiles',
+          desc: 'Offline base map vector tiles',
+          sizeKey: fileSizes.containsKey('maps') ? 'maps' : 'map',
+          icon: Icons.map_outlined,
+          type: 'maps',
+        ),
+      if (fileSizes.containsKey('marine') || fileSizes.containsKey('seamap'))
+        _FolderItem(
+          path: '/marine',
+          name: 'Sea Charts',
+          desc: 'Offline seamaps and safety channels',
+          sizeKey: fileSizes.containsKey('marine') ? 'marine' : 'seamap',
+          icon: Icons.water_outlined,
+          type: 'marine',
+        ),
+      if (fileSizes.containsKey('landmarks') || fileSizes.containsKey('landmark'))
+        _FolderItem(
+          path: '/landmarks',
+          name: 'Landmark Coordinates',
+          desc: 'Visual physical landmark targets',
+          sizeKey:
+              fileSizes.containsKey('landmarks') ? 'landmarks' : 'landmark',
+          icon: Icons.location_on_outlined,
+          type: 'landmarks',
+        ),
+      if (fileSizes.containsKey('magnetic'))
+        _FolderItem(
+          path: '/magnetic',
+          name: 'Magnetic Grid Readings',
+          desc: 'Offline magnetic anomaly reference grid',
+          sizeKey: 'magnetic',
+          icon: Icons.explore_outlined,
+          type: 'magnetic',
+        ),
+      if (fileSizes.containsKey('celestial'))
+        _FolderItem(
+          path: '/celestial',
+          name: 'Celestial Tables',
+          desc: 'Sun, moon, and star alignment tables',
+          sizeKey: 'celestial',
+          icon: Icons.wb_sunny_outlined,
+          type: 'celestial',
+        ),
       if (fileSizes.containsKey('imu'))
         _FolderItem(
           path: '/imu',
@@ -98,6 +105,22 @@ class _PackFileExplorerState extends State<PackFileExplorer> {
           type: 'trust',
         ),
     ];
+    // If metadata has no size map, show a single contents summary instead of
+    // inventing empty mock folders.
+    if (folders.isEmpty) {
+      folders.add(
+        _FolderItem(
+          path: '/contents',
+          name: 'Pack contents',
+          desc: pack.includedData.isNotEmpty
+              ? pack.includedData.join(' · ')
+              : 'Installed offline region data',
+          sizeKey: 'maps',
+          icon: Icons.folder_outlined,
+          type: 'maps',
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
