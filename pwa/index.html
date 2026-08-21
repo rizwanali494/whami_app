@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0A1628">
+  <meta name="description" content="WHAMI — Where Am I? Verified by the real world.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="WHAMI">
+  <title>WHAMI</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./favicon.png">
+  <link rel="apple-touch-icon" href="./icons/Icon-192.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="./css/app.css?v=11">
+</head>
+<body>
+  <div class="app">
+    <section id="splash-screen" class="screen splash active">
+      <img class="splash-logo" src="./icons/app_icon.png" alt="WHAMI">
+      <h1>WHAMI</h1>
+      <p>Verified by the real world.</p>
+    </section>
+
+    <section id="onboarding-screen" class="screen onboarding">
+      <header class="onboard-top">
+        <div class="onboard-brand">
+          <img src="./icons/app_icon.png" alt="">
+          <span>WHAMI</span>
+        </div>
+        <button class="onboarding-skip" id="skip-onboard" type="button">Skip intro</button>
+      </header>
+      <div class="onboard-page">
+        <div class="onboard-intro">
+          <p class="onboard-kicker">Verified by the real world</p>
+          <h2>Can I trust where I am?</h2>
+          <p class="onboard-lead">WHAMI fuses GPS, landmarks, magnetic field, motion, and sky into one plain-language answer — Reliable, Caution, or Unreliable.</p>
+        </div>
+        <div class="onboarding-slides">
+          <article class="onboarding-slide">
+            <div class="onboarding-icon">
+              <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 4l12 6v10c0 8-5 13-12 16C13 33 8 28 8 20V10z"/><path d="M14 20l4 4 8-8"/></svg>
+            </div>
+            <h3>Multiple witnesses</h3>
+            <p>GPS, landmarks, magnetic field, motion, and sky vote on your position.</p>
+          </article>
+          <article class="onboarding-slide hidden">
+            <div class="onboarding-icon">
+              <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 28l10-16 8 10 4-6 6 12H6z"/></svg>
+            </div>
+            <h3>Map is home</h3>
+            <p>See trust at a glance. Open details only when you need them.</p>
+          </article>
+          <article class="onboarding-slide hidden">
+            <div class="onboarding-icon">
+              <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="10" width="24" height="20" rx="3"/><path d="M14 18h12M14 24h8"/></svg>
+            </div>
+            <h3>Verify when unsure</h3>
+            <p>Confirm a landmark or cache a region pack so it still works offline.</p>
+          </article>
+        </div>
+        <div class="dots"><i class="dot on"></i><i class="dot"></i><i class="dot"></i></div>
+        <div class="onboard-actions">
+          <button class="onboarding-next" id="next-onboard" type="button">Continue</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="map-screen" class="screen">
+      <div id="map"></div>
+      <header class="map-header">
+        <div class="logo-tile"><img src="./icons/app_icon.png" alt="WHAMI"></div>
+        <div class="tagline">Verified by the real world.</div>
+        <button class="menu-btn" id="menu-btn" type="button" aria-label="Diagnostics and settings">
+          <svg width="22" height="22" fill="currentColor"><circle cx="5" cy="11" r="1.7"/><circle cx="11" cy="11" r="1.7"/><circle cx="17" cy="11" r="1.7"/></svg>
+        </button>
+      </header>
+      <div id="map-notice" class="notice hidden"></div>
+      <div class="map-fabs">
+        <button class="fab" id="pitch-btn" type="button" aria-label="Tilt map">
+          <svg width="22" height="22" fill="none" stroke="#0A1628" stroke-width="1.8"><path d="M4 16l7-10 7 10H4z"/></svg>
+        </button>
+        <button class="fab" id="recenter-btn" type="button" aria-label="Recenter">
+          <svg width="22" height="22" fill="none" stroke="#0A1628" stroke-width="1.8"><circle cx="11" cy="11" r="3"/><path d="M11 3v3M11 16v3M3 11h3M16 11h3"/></svg>
+        </button>
+      </div>
+      <aside class="sheet" id="sheet">
+        <button class="track-pill" id="track-pill" type="button">START TRACKING</button>
+        <div class="sheet-handle"></div>
+        <div class="sheet-scroll">
+          <div class="trust-row">
+            <div class="trust-icon" id="trust-icon"></div>
+            <div class="trust-copy">
+              <h2 id="trust-headline">Checking position</h2>
+              <p id="trust-subtitle">Start tracking to verify your position</p>
+            </div>
+            <div class="trust-score" id="trust-score-wrap">
+              <strong id="trust-score">0</strong><span> / 100</span>
+            </div>
+          </div>
+          <p class="explain" id="trust-explain"></p>
+          <button class="verify-cta hidden" id="verify-cta" type="button">Open Verify</button>
+          <button class="sources-toggle" id="sources-toggle" type="button">
+            Verification sources
+            <svg width="22" height="22" fill="none" stroke="#546E7A" stroke-width="2"><path d="M6 9l5 5 5-5"/></svg>
+          </button>
+          <div id="source-list"></div>
+        </div>
+      </aside>
+    </section>
+
+    <section id="verify-screen" class="screen">
+      <header class="appbar"><h1>Verify</h1></header>
+      <div class="tabs" id="verify-tabs">
+        <button class="tab on" data-vtab="landmark" type="button">Landmark Scan</button>
+        <button class="tab" data-vtab="ar" type="button">Camera Scan</button>
+      </div>
+      <div class="screen-body page-pad" id="verify-landmark">
+        <p class="muted">Confirm a nearby landmark to raise trust.</p>
+        <div id="landmark-list"></div>
+      </div>
+      <div class="screen-body page-pad hidden" id="verify-ar">
+        <div class="cam-wrap"><video id="verify-video" playsinline muted></video></div>
+        <p class="muted" id="cam-status" style="margin-top:12px">Point the camera at a known landmark, then confirm it on the Landmark tab.</p>
+      </div>
+    </section>
+
+    <section id="sensors-screen" class="screen">
+      <header class="appbar">
+        <h1>Sensor Dashboard</h1>
+        <span class="chip" id="sensor-count">0/7 Active</span>
+      </header>
+      <div class="screen-body page-pad" id="sensor-list"></div>
+    </section>
+
+    <section id="packs-screen" class="screen">
+      <header class="appbar"><h1>Offline packs</h1></header>
+      <div class="screen-body page-pad">
+        <input class="search" id="pack-search" type="search" placeholder="Search regions">
+        <div class="filters" id="pack-filters">
+          <button class="filter on" data-filter="All" type="button">All</button>
+          <button class="filter" data-filter="Urban" type="button">Urban</button>
+          <button class="filter" data-filter="Marine" type="button">Marine</button>
+          <button class="filter" data-filter="Hiking" type="button">Hiking</button>
+        </div>
+        <div id="pack-list"></div>
+      </div>
+    </section>
+
+    <section id="activity-screen" class="screen">
+      <header class="appbar"><h1>Activity</h1></header>
+      <div class="screen-body page-pad">
+        <div class="summary-chips">
+          <div class="summary-chip crit"><strong id="act-crit">0</strong><span>Critical</span></div>
+          <div class="summary-chip warn"><strong id="act-warn">0</strong><span>Warning</span></div>
+          <div class="summary-chip info"><strong id="act-info">0</strong><span>Info</span></div>
+        </div>
+        <div id="activity-list" style="margin-top:14px"></div>
+      </div>
+    </section>
+
+    <section id="settings-screen" class="screen">
+      <header class="appbar">
+        <button class="menu-btn" id="back-settings" type="button" aria-label="Back" style="width:40px;height:40px">
+          <svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2"><path d="M13 5L7 10l6 5"/></svg>
+        </button>
+        <h1>Diagnostics &amp; Settings</h1>
+        <span></span>
+      </header>
+      <div class="screen-body page-pad">
+        <div class="install-banner" id="install-banner">
+          <strong>Install WHAMI</strong>
+          <p class="muted">Add this PWA to your home screen for a full-screen app.</p>
+          <button class="btn btn-primary" id="install-btn" type="button" style="margin-top:10px">Install</button>
+        </div>
+        <article class="card">
+          <div class="setting row-between">
+            <div><h3>Outdoor contrast</h3><p>Boost contrast for bright conditions</p></div>
+            <button class="toggle" id="toggle-outdoor" type="button"><i></i></button>
+          </div>
+          <div class="setting row-between">
+            <div><h3>Metric units</h3><p>Meters and kilometres</p></div>
+            <button class="toggle on" id="toggle-metric" type="button"><i></i></button>
+          </div>
+          <div class="setting">
+            <h3>Offline storage</h3>
+            <p id="settings-pack">No region pack cached</p>
+          </div>
+          <div class="setting">
+            <h3>About</h3>
+            <p id="settings-version">WHAMI PWA v2.0.0</p>
+            <p>Browser sensors cannot match the native app’s barometer or MBTiles packs. Use this PWA for map + GPS trust on the web.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <footer class="chrome" id="chrome" hidden>
+      <div class="chrome-brand">
+        <img src="./icons/app_icon.png" alt="">
+        <div>
+          <strong>WHAMI</strong>
+          <span>Verified by the real world.</span>
+        </div>
+      </div>
+      <div class="status-bar" id="status-bar">Online · No Pack Loaded · All Sources Active</div>
+      <nav class="nav" id="app-nav">
+        <button type="button" data-route="map">
+          <span class="indicator"><svg width="22" height="22" fill="currentColor"><path d="M3 17l6-10 4 6 2-3 4 7H3z"/></svg></span>Map
+        </button>
+        <button type="button" data-route="verify">
+          <span class="indicator"><svg width="22" height="22" fill="currentColor"><path d="M11 2l8 4v6c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6l8-4zm-1 13l6-6-1.4-1.4L10 12.2 7.4 9.6 6 11l4 4z"/></svg></span>Verify
+        </button>
+        <button type="button" data-route="sensors">
+          <span class="indicator"><svg width="22" height="22" fill="currentColor"><circle cx="11" cy="11" r="2"/><path d="M11 3v3M11 16v3M3 11h3M16 11h3M5.6 5.6l2.1 2.1M14.3 14.3l2.1 2.1M16.4 5.6l-2.1 2.1M7.7 14.3l-2.1 2.1"/></svg></span>Sensors
+        </button>
+        <button type="button" data-route="packs">
+          <span class="indicator"><svg width="22" height="22" fill="currentColor"><path d="M11 2a9 9 0 100 18 9 9 0 000-18zm-1 13l-3.5-3.5 1.4-1.4L10 12.2l4.1-4.1 1.4 1.4L10 15z"/></svg></span>Offline
+        </button>
+        <button type="button" data-route="activity">
+          <span class="indicator"><svg width="22" height="22" fill="currentColor"><path d="M12 4a8 8 0 108 8h-2a6 6 0 11-6-6V4zm1 4v4l3 2"/></svg></span>Activity
+        </button>
+      </nav>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="./js/storage.js?v=6"></script>
+  <script src="./js/trust.js?v=6"></script>
+  <script src="./js/sensors.js?v=6"></script>
+  <script src="./js/map.js?v=6"></script>
+  <script src="./js/app.js?v=10"></script>
+</body>
+</html>

@@ -3,25 +3,28 @@ import 'app.dart';
 import 'core/preferences/app_preferences.dart';
 import 'navigation/whami_router.dart';
 
-Future<void> main()
-async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await appPreferences.load();
-  await bootstrapWhamiServices();
 
-  // Initialize physical hardware sensors after services are up.
-  await whamiRepo.sensors.initializeAll();
-
-  // Start magnetometer stream immediately so readings flow from boot
-  magnetometerService.startListening();
-  debugPrint(
-    '[main] Magnetometer stream started on launch '
-    '(available: ${magnetometerService.isAvailable})',
-  );
-
-  // Start background magnetometer feed into repository opinions
-  whamiRepo.startMagnetometerFeed();
-
+  // Show UI immediately — sensors / permissions continue in the background.
   runApp(const WhamiApp());
+
+  // Local tile/glyph servers (concurrent) then hardware init.
+  // ignore: unawaited_futures
+  () async {
+    try {
+      await bootstrapWhamiServices();
+      await whamiRepo.sensors.initializeAll();
+      magnetometerService.startListening();
+      debugPrint(
+        '[main] Magnetometer stream started '
+        '(available: ${magnetometerService.isAvailable})',
+      );
+      whamiRepo.startMagnetometerFeed();
+    } catch (e) {
+      debugPrint('[main] Background sensor bootstrap failed: $e');
+    }
+  }();
 }

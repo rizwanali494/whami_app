@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' show Point;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -100,8 +101,13 @@ class _WhamiMapViewState extends State<WhamiMapView>
   }
 
   Map<String, dynamic> _buildStyleJson() {
+    final hasPack = widget.repository.activePackId.isNotEmpty;
     return _mapEngine.tile.generateStyle(
       glyphsUrl: widget.repository.glyphServer.baseUrl,
+      includeRasterBasemap: !hasPack,
+      rasterCacheUrl: hasPack
+          ? null
+          : widget.repository.rasterTileCacheService.baseUrl,
     );
   }
 
@@ -176,6 +182,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
         isOffline: isOffline,
         localMBTilesUrl: localMBTilesUrl,
         rasterCacheUrl: widget.repository.rasterTileCacheService.baseUrl,
+        rasterAlreadyInStyle: activePack == null,
       );
     } catch (e) {
       debugPrint('Error loading base map layers: $e');
@@ -469,6 +476,7 @@ class _WhamiMapViewState extends State<WhamiMapView>
             tiltGesturesEnabled: true,
             trackCameraPosition: true,
             logoEnabled: false,
+            attributionButtonMargins: const Point(8, 8),
           ),
         ),
 

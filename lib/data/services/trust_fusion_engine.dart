@@ -48,10 +48,21 @@ class TrustFusionEngine {
     required bool hasOfflineData,
     required double? lastTrustedLat,
     required double? lastTrustedLng,
+    /// Visual landmark anchor used when GPS is unavailable.
+    double? landmarkAnchorLat,
+    double? landmarkAnchorLng,
+    String? landmarkAnchorName,
   }) {
     final opinions = <PositionOpinion>[];
     String alertMessage = 'Positions aligned. System nominal.';
     String alertSeverity = 'none';
+
+    final hasValidGps = gps != null;
+    final hasAnchor =
+        landmarkAnchorLat != null && landmarkAnchorLng != null;
+    final hasPositionCoords = hasValidGps ||
+        hasAnchor ||
+        (lastTrustedLat != null && lastTrustedLng != null);
 
     // ── 1. GPS Position Opinion ──────────────────────────────────────────────
     if (gps != null) {
@@ -98,28 +109,36 @@ class TrustFusionEngine {
       );
     }
 
-    // ── 2. Landmark Matching Opinion ─────────────────────────────────────────
+    // ── 2. Landmark Matching / Visual Anchor Opinion ─────────────────────────
     if (hasOfflineData && landmarkMatch != null && gps != null) {
-      // Landmark position is considered highly precise. If GPS matches it, high confidence.
-      // If we point camera or match landmarks, our position is bounded by that landmark.
-      // For this engine, we project the landmark opinion. If user is close,
-      // the landmark opinion is at the nearest landmark location, with a small uncertainty radius.
       final confidenceScore = (landmarkMatch.confidence * 100).toInt();
       final double estimatedUncertainty = landmarkMatch.distance.clamp(
         10.0,
         150.0,
       );
 
+      // Use the live GPS coords (no random jitter) — landmark match validates
+      // proximity; inventing nearby coordinates only degraded trust.
       opinions.add(
         PositionOpinion.fromLandmark(
-          latitude:
-              gps.latitude +
-              ((Random().nextDouble() - 0.5) * 0.0001), // Jitter near GPS
-          longitude: gps.longitude + ((Random().nextDouble() - 0.5) * 0.0001),
+          latitude: gps.latitude,
+          longitude: gps.longitude,
           confidence: confidenceScore,
           uncertaintyRadius: estimatedUncertainty,
           status: 'active',
           description: 'Nearest matched landmark: ${landmarkMatch.name}',
+        ),
+      );
+    } else if (hasAnchor && gps == null) {
+      opinions.add(
+        PositionOpinion.fromLandmark(
+          latitude: landmarkAnchorLat,
+          longitude: landmarkAnchorLng,
+          confidence: 88,
+          uncertaintyRadius: 40.0,
+          status: 'active',
+          description:
+              'Visual anchor: ${landmarkAnchorName ?? "landmark"} (no GPS)',
         ),
       );
     } else {
@@ -160,7 +179,7 @@ class TrustFusionEngine {
         alertSeverity = 'info';
       }
 
-      // Magnetic lookup gives position validation
+      // Magnetic lookup gives position validation at the known GPS fix
       opinions.add(
         PositionOpinion.fromMagnetic(
           latitude: gps.latitude,
@@ -172,34 +191,49 @@ class TrustFusionEngine {
         ),
       );
     } else if (magnetometer != null) {
-      // Live hardware reading available but no offline cross-check data.
-      // Still show the sensor as active with raw field readings.
+      // Live hardware reading — verify-only when we lack real coordinates.
+      // Never invent (0,0) as a position vote.
       final strength = magnetometer.fieldStrength;
       final heading = magnetometer.heading;
 
-      // Derive a basic confidence from field stability (no baseline cross-check)
       int rawConfidence;
       if (strength > 20 && strength < 65) {
-        rawConfidence = 72; // Typical Earth field range → reasonable
+        rawConfidence = 72;
       } else if (strength > 10 && strength < 100) {
-        rawConfidence = 50; // Slightly outside norm
+        rawConfidence = 50;
       } else {
-        rawConfidence = 25; // Unusual reading
+        rawConfidence = 25;
       }
 
-      opinions.add(
-        PositionOpinion.fromMagnetic(
-          latitude: gps?.latitude ?? 0,
-          longitude: gps?.longitude ?? 0,
-          confidence: rawConfidence,
-          uncertaintyRadius: 300.0,
-          status: 'active',
-          description:
-              'Live: ${heading.toStringAsFixed(0)}° heading, '
-              '${strength.toStringAsFixed(1)} µT'
-              '${!hasOfflineData ? ' (no pack for cross-check)' : ''}',
-        ),
-      );
+      if (hasPositionCoords && gps != null) {
+        opinions.add(
+          PositionOpinion.fromMagnetic(
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            confidence: rawConfidence,
+            uncertaintyRadius: 300.0,
+            status: 'active',
+            description:
+                'Live: ${heading.toStringAsFixed(0)}° heading, '
+                '${strength.toStringAsFixed(1)} µT'
+                '${!hasOfflineData ? ' (no pack for cross-check)' : ''}',
+          ),
+        );
+      } else {
+        // Status "verify" is shown in the UI but excluded from lat/lng fusion.
+        opinions.add(
+          PositionOpinion.fromMagnetic(
+            latitude: 0,
+            longitude: 0,
+            confidence: rawConfidence,
+            uncertaintyRadius: 300.0,
+            status: 'verify',
+            description:
+                'Compass verify-only: ${heading.toStringAsFixed(0)}° / '
+                '${strength.toStringAsFixed(1)} µT — no position coords',
+          ),
+        );
+      }
     } else {
       opinions.add(
         PositionOpinion.unavailable(
@@ -262,13 +296,11 @@ class TrustFusionEngine {
 
     // ── 5. Celestial Alignment Opinion ───────────────────────────────────────
     if (sky != null && gps != null) {
-      // Sky calculation provides coarse offline verification
+      // Coarse offline verification at the GPS fix — no invented jitter.
       opinions.add(
         PositionOpinion.fromSky(
-          latitude:
-              gps.latitude +
-              ((Random().nextDouble() - 0.5) * 0.003), // Coarse scale jitter
-          longitude: gps.longitude + ((Random().nextDouble() - 0.5) * 0.003),
+          latitude: gps.latitude,
+          longitude: gps.longitude,
           confidence: sky.confidence,
           uncertaintyRadius: 800.0,
           status: 'active',
@@ -296,8 +328,14 @@ class TrustFusionEngine {
     int compositeConfidence = 0;
     double compositeUncertainty = 0.0;
 
+    // Exclude verify-only / unavailable / 0,0 placeholder coords from position.
     final activeOpinions = opinions
-        .where((op) => op.status == 'active' && op.confidence > 0)
+        .where(
+          (op) =>
+              op.status == 'active' &&
+              op.confidence > 0 &&
+              !(op.latitude == 0 && op.longitude == 0),
+        )
         .toList();
 
     if (activeOpinions.isNotEmpty) {

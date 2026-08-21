@@ -689,7 +689,8 @@ class _SourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unstable = opinion.status == 'unstable';
-    final scoreColor = unstable
+    final verifyOnly = opinion.status == 'verify';
+    final scoreColor = unstable || verifyOnly
         ? AppColors.trustMediumDark
         : AppColors.forTrust(opinion.confidence);
 
@@ -722,7 +723,11 @@ class _SourceRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   opinion.description.isEmpty
-                      ? (unstable ? 'Unstable' : 'Active')
+                      ? (unstable
+                          ? 'Unstable'
+                          : verifyOnly
+                              ? 'Verify only'
+                              : 'Active')
                       : opinion.description,
                   style: const TextStyle(
                     fontSize: 12,

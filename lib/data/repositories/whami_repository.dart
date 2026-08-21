@@ -41,6 +41,9 @@ class WhamiRepository extends ChangeNotifier {
   final List<Map<String, double>> _trail = [];
   List<Landmark> _activePackLandmarks = [];
 
+  /// Visual landmark used as a no-GPS position anchor ("Use as anchor").
+  Landmark? _landmarkAnchor;
+
   // Cache of the last GPS fix a landmark query was run for, so snapshots
   // triggered purely by IMU/magnetometer/barometer ticks (which can fire at
   // several Hz) don't each re-issue an expensive SQLite lookup.
@@ -130,21 +133,26 @@ class WhamiRepository extends ChangeNotifier {
   /// regions are only ever activated by explicit user choice on the Region
   /// Packs screen, so the map starts in raster-basemap mode every launch.
   Future<void> _initDefaultPack() async {
-    await _sensors.gpsService.initialize();
-    final loc = await _sensors.gpsService.getCurrentPosition();
-
-    if (loc != null) {
-      centerMapOn(loc.latitude, loc.longitude);
-    } else {
-      // No GPS fix yet — center on a neutral default so the map isn't blank.
-      centerMapOn(
-        _packCoordinates['sf_bay']![0],
-        _packCoordinates['sf_bay']![1],
-      );
-    }
-
+    // Do not block launch on GPS permission — center on a neutral default,
+    // then refine asynchronously once a fix is available.
+    centerMapOn(
+      _packCoordinates['sf_bay']![0],
+      _packCoordinates['sf_bay']![1],
+    );
     _eventLog.seedInitialEvents();
     notifyListeners();
+
+    unawaited(() async {
+      try {
+        await _sensors.gpsService.initialize();
+        final loc = await _sensors.gpsService.getCurrentPosition();
+        if (loc != null) {
+          centerMapOn(loc.latitude, loc.longitude);
+        }
+      } catch (e) {
+        debugPrint('[WhamiRepository] Deferred GPS center failed: $e');
+      }
+    }());
   }
 
   void _initConnectivity() {
@@ -188,6 +196,7 @@ class WhamiRepository extends ChangeNotifier {
       regionRepository.deleteRegionPack(packId);
 
   Future<void> activateRegionPack(String packId) async {
+    clearLandmarkAnchor();
     await regionRepository.activateRegionPack(packId);
 
     if (_isTracking) {
@@ -230,6 +239,7 @@ class WhamiRepository extends ChangeNotifier {
   }
 
   Future<void> deactivateRegionPack() async {
+    clearLandmarkAnchor();
     await regionRepository.deactivateRegionPack();
     _activePackLandmarks = [];
     mapRepository.updateVisibleLandmarks([]);
@@ -366,6 +376,9 @@ class WhamiRepository extends ChangeNotifier {
       hasOfflineData: activePackId.isNotEmpty,
       lastTrustedLat: lastLat,
       lastTrustedLng: lastLng,
+      landmarkAnchorLat: _landmarkAnchor?.latitude,
+      landmarkAnchorLng: _landmarkAnchor?.longitude,
+      landmarkAnchorName: _landmarkAnchor?.name,
     );
 
     _opinions = fusion.opinions;
@@ -397,8 +410,15 @@ class WhamiRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Create and commit a matched visual landmark as an anchor
+  /// Create and commit a matched visual landmark as an anchor for no-GPS fusion.
   void setLandmarkAnchor(Landmark landmark, int matchPercent) {
+    _landmarkAnchor = landmark;
+    // Seed the trail so IMU dead-reckoning and trusted position have a base.
+    _trail.add({
+      'latitude': landmark.latitude,
+      'longitude': landmark.longitude,
+    });
+    centerMapOn(landmark.latitude, landmark.longitude);
     _eventLog.addEvent(
       title: 'Visual Anchor Set',
       description:
@@ -406,6 +426,12 @@ class WhamiRepository extends ChangeNotifier {
       severity: 'info',
       iconName: 'anchor',
     );
+    notifyListeners();
+  }
+
+  void clearLandmarkAnchor() {
+    if (_landmarkAnchor == null) return;
+    _landmarkAnchor = null;
     notifyListeners();
   }
 
@@ -468,9 +494,9 @@ class WhamiRepository extends ChangeNotifier {
             longitude: 0,
             confidence: magConfidence,
             uncertaintyRadius: magService.detectInterference() ? 500.0 : 150.0,
-            status: magService.detectInterference() ? 'unstable' : 'active',
+            status: 'verify',
             description:
-                'Live: ${magReading.heading.toStringAsFixed(0)}° heading',
+                'Compass verify-only: ${magReading.heading.toStringAsFixed(0)}°',
           )
         else
           PositionOpinion.unavailable(

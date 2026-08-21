@@ -8,7 +8,6 @@ import '../../core/preferences/app_preferences.dart';
 import '../../core/trust/trust_summary.dart';
 import '../../core/widgets/status_panel.dart';
 import '../../data/repositories/whami_repository.dart';
-import '../sensors/sensors_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final WhamiRepository repository;
@@ -192,21 +191,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       ListTile(
                         leading: const Icon(Icons.sensors, color: AppColors.imu),
-                        title: const Text('Sensors', style: TextStyle(fontSize: 15)),
+                        title: const Text(
+                          'Sensors',
+                          style: TextStyle(fontSize: 15),
+                        ),
                         subtitle: const Text(
-                          'GPS, magnetometer, IMU, barometer health',
+                          'GPS, magnetometer, IMU, barometer, camera, sky',
                           style: TextStyle(fontSize: 13),
                         ),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => SensorsScreen(
-                                repository: widget.repository,
-                              ),
-                            ),
-                          );
-                        },
+                        onTap: () => context.go('/sensors'),
                       ),
                       const Divider(height: 1, indent: 16),
                       SwitchListTile(

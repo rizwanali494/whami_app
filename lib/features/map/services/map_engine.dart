@@ -1,28 +1,56 @@
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import '../../../core/config/map_basemap_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/position_opinion.dart';
 
 class TileEngine {
-  /// Generate the base MapLibre style JSON. This now contains only the
-  /// background layer — every real source/layer (vector base map, raster
-  /// fallback, overlay layers) is added imperatively via the controller API
-  /// in LayerEngine after the style loads. See LayerEngine.setupBaseMapLayers
-  /// for why: embedding sources/layers directly in this JSON string does not
-  /// reliably render for a custom local vector source in this maplibre_gl
-  /// version, confirmed via direct device testing.
-  Map<String, dynamic> generateStyle({String? glyphsUrl}) {
+  /// Generate the base MapLibre style JSON.
+  ///
+  /// When [includeRasterBasemap] is true (no offline pack), the light OSM
+  /// raster source/layer is embedded so streets paint on first style load
+  /// instead of waiting for imperative setup. Local vector MBTiles packs
+  /// still use an empty style + imperative layers — embedding those does
+  /// not render reliably in this maplibre_gl version.
+  Map<String, dynamic> generateStyle({
+    String? glyphsUrl,
+    bool includeRasterBasemap = true,
+    String? rasterCacheUrl,
+  }) {
+    final sources = <String, dynamic>{};
+    final layers = <Map<String, dynamic>>[
+      {
+        'id': 'background',
+        'type': 'background',
+        'paint': {'background-color': '#F2EFE9'},
+      },
+    ];
+
+    if (includeRasterBasemap) {
+      final tiles = (rasterCacheUrl != null && rasterCacheUrl.isNotEmpty)
+          ? ['$rasterCacheUrl/{z}/{x}/{y}.png']
+          : MapBasemapConfig.tileUrls;
+      sources['open-tiles'] = {
+        'type': 'raster',
+        'tiles': tiles,
+        'tileSize': MapBasemapConfig.tileSize,
+        'maxzoom': MapBasemapConfig.sourceMaxZoom,
+        'attribution': MapBasemapConfig.attribution,
+      };
+      layers.add({
+        'id': 'base-tiles',
+        'type': 'raster',
+        'source': 'open-tiles',
+        'minzoom': 0,
+        'maxzoom': MapBasemapConfig.layerMaxZoom,
+      });
+    }
+
     return {
       'version': 8,
-      'name': 'WHAMI Offline Vector',
-      'sources': <String, dynamic>{},
-      'layers': [
-        {
-          'id': 'background',
-          'type': 'background',
-          'paint': {'background-color': '#F2EFE9'},
-        },
-      ],
+      'name': MapBasemapConfig.styleName,
+      'sources': sources,
+      'layers': layers,
       // Bundled Noto Sans glyphs served locally (see GlyphServer) — works
       // identically online and offline, no external dependency. Required
       // for any text-field symbol layer (road/place/POI labels) to render
@@ -147,6 +175,9 @@ class LayerEngine {
     required bool isOffline,
     String? localMBTilesUrl,
     String? rasterCacheUrl,
+    /// When true, the light OSM raster was already baked into the style JSON
+    /// — skip the redundant imperative raster add for the no-pack path.
+    bool rasterAlreadyInStyle = false,
   }) async {
     final c = _controller;
     if (c == null) return;
@@ -155,6 +186,11 @@ class LayerEngine {
 
     final hasLocalTiles =
         localMBTilesUrl != null && localMBTilesUrl.isNotEmpty;
+
+    // Raster was baked into the initial style — nothing to add or clear.
+    if (!hasLocalTiles && rasterAlreadyInStyle) return;
+
+    await _clearBaseMapLayers();
 
     if (hasLocalTiles) {
       await _safeAdd(
@@ -744,21 +780,17 @@ class LayerEngine {
           ],
         ),
       );
-    } else {
-      // No pack active.
+    } else if (!rasterAlreadyInStyle) {
+      // No pack active — light OSM raster (only when not already in style JSON).
       if (rasterCacheUrl != null && rasterCacheUrl.isNotEmpty) {
-        // Raster base tiles routed through RasterTileCacheService: on a
-        // cache hit it serves straight from the local SQLite cache (works
-        // offline, for any area previously panned over while online); on a
-        // miss while online it fetches from CartoDB, caches the tile, and
-        // serves it. A single {z}/{x}/{y} template is enough (vs. the 3
-        // CartoDB subdomains) since the proxy itself round-robins them.
         await _safeAdd(
           'open-tiles source',
           () => c.addSource(
             'open-tiles',
             RasterSourceProperties(
               tiles: ['$rasterCacheUrl/{z}/{x}/{y}.png'],
+              tileSize: MapBasemapConfig.tileSize,
+              maxzoom: MapBasemapConfig.sourceMaxZoom,
             ),
           ),
         );
@@ -769,22 +801,18 @@ class LayerEngine {
             'base-tiles',
             const RasterLayerProperties(),
             minzoom: 0,
-            maxzoom: 14,
+            maxzoom: MapBasemapConfig.layerMaxZoom,
           ),
         );
       } else if (!isOffline) {
-        // Cache proxy hasn't finished starting yet — hit CartoDB directly
-        // so there's no blank window while it comes up.
         await _safeAdd(
           'open-tiles source',
           () => c.addSource(
             'open-tiles',
-            const RasterSourceProperties(
-              tiles: [
-                'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-              ],
+            RasterSourceProperties(
+              tiles: MapBasemapConfig.tileUrls,
+              tileSize: MapBasemapConfig.tileSize,
+              maxzoom: MapBasemapConfig.sourceMaxZoom,
             ),
           ),
         );
@@ -795,7 +823,7 @@ class LayerEngine {
             'base-tiles',
             const RasterLayerProperties(),
             minzoom: 0,
-            maxzoom: 14,
+            maxzoom: MapBasemapConfig.layerMaxZoom,
           ),
         );
       }

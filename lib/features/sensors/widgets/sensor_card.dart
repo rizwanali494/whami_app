@@ -14,14 +14,29 @@ class SensorCard extends StatelessWidget {
 
   IconData _iconFor(String name) {
     switch (name) {
-      case 'satellite_alt': return Icons.satellite_alt;
-      case 'explore': return Icons.explore;
-      case 'directions_walk': return Icons.directions_walk;
-      case 'rotate_90_degrees_ccw': return Icons.rotate_90_degrees_ccw;
-      case 'compress': return Icons.compress;
-      case 'wb_sunny': return Icons.wb_sunny;
-      case 'hub': return Icons.hub;
-      default: return Icons.sensors;
+      case 'satellite_alt':
+      case 'gps_fixed':
+        return Icons.satellite_alt;
+      case 'explore':
+        return Icons.explore;
+      case 'directions_walk':
+      case 'navigation':
+        return Icons.directions_walk;
+      case 'rotate_90_degrees_ccw':
+        return Icons.rotate_90_degrees_ccw;
+      case 'compress':
+      case 'height':
+        return Icons.compress;
+      case 'wb_sunny':
+      case 'brightness_5':
+        return Icons.wb_sunny;
+      case 'camera_alt':
+        return Icons.document_scanner;
+      case 'hub':
+      case 'security':
+        return Icons.hub;
+      default:
+        return Icons.sensors;
     }
   }
 

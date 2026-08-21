@@ -1,5 +1,40 @@
 {
   "storage": {
     "rules": "storage.rules"
+  },
+  "hosting": {
+    "public": "pwa",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "**/scripts/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/sw.js",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      },
+      {
+        "source": "/index.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      },
+      {
+        "source": "**/*.@(js|css|png|jpg|svg|webp)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public,max-age=3600" }
+        ]
+      }
+    ]
   }
 }

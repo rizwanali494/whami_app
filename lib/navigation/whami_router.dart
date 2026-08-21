@@ -23,6 +23,7 @@ import '../data/services/trust_fusion_engine.dart';
 import '../data/services/trust_event_log.dart';
 import '../features/map/map_screen.dart';
 import '../features/scan/scan_screen.dart';
+import '../features/sensors/sensors_screen.dart';
 import '../features/region_packs/region_pack_screen.dart';
 import '../features/alerts/alerts_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -82,8 +83,10 @@ final whamiRepo = WhamiRepository(
 
 /// Starts long-lived local servers after Flutter binding is ready.
 Future<void> bootstrapWhamiServices() async {
-  await rasterTileCacheService.start();
-  await glyphServer.start();
+  await Future.wait([
+    rasterTileCacheService.start(),
+    glyphServer.start(),
+  ]);
 }
 
 final whamiRouter = GoRouter(
@@ -128,6 +131,14 @@ final whamiRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
+              path: '/sensors',
+              builder: (_, __) => SensorsScreen(repository: whamiRepo),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
               path: '/packs',
               builder: (_, __) =>
                   RegionPackScreen(repository: whamiRepo),
@@ -151,7 +162,6 @@ final whamiRouter = GoRouter(
     // Legacy path redirects
     GoRoute(path: '/scan', redirect: (_, __) => '/verify'),
     GoRoute(path: '/alerts', redirect: (_, __) => '/activity'),
-    GoRoute(path: '/sensors', redirect: (_, __) => '/settings'),
   ],
 );
 
@@ -201,6 +211,11 @@ class _WhamiShell extends StatelessWidget {
                   icon: Icon(Icons.verified_outlined, color: Color(0xFF90A4AE)),
                   selectedIcon: Icon(Icons.verified, color: AppColors.whami),
                   label: 'Verify',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.sensors_outlined, color: Color(0xFF90A4AE)),
+                  selectedIcon: Icon(Icons.sensors, color: AppColors.whami),
+                  label: 'Sensors',
                 ),
                 NavigationDestination(
                   icon:

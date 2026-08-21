@@ -1,29 +1,29 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import '../../core/config/map_basemap_config.dart';
 
-/// Caches CartoDB raster basemap tiles locally as they're fetched while
-/// online, and fronts them behind a local HTTP server shaped like the CDN
-/// itself (`/{z}/{x}/{y}.png`).
+/// Caches light OSM (CARTO) raster basemap tiles behind a local HTTP server
+/// shaped like the CDN (`/{z}/{x}/{y}.png`).
 ///
-/// A request is served from the local SQLite cache when present; on a miss
-/// while online it's fetched from CartoDB, stored, and served. This means
-/// any area a user has panned over once while online stays visible later
-/// when offline with no region pack active, instead of falling back to a
-/// blank background.
+/// Cache hits are served immediately. Misses coalesce duplicate in-flight
+/// requests, fetch over a keep-alive [HttpClient], store for seven days, and
+/// only evict when the store exceeds 110% of capacity.
 class RasterTileCacheService {
-  static const _cdnHosts = ['a', 'b', 'c'];
-
-  // Roughly bounds cache disk usage — 256px PNG/JPEG tiles from this CDN
-  // run a few KB to ~30KB each, so this caps around a couple hundred MB.
   static const _maxCachedTiles = 4000;
+  static const _evictThreshold = 4400; // 110% — avoid thrashing every insert
+  static const _ttl = Duration(days: 7);
 
   HttpServer? _server;
   Database? _db;
+  HttpClient? _httpClient;
   int _hostIndex = 0;
+
+  /// In-flight CDN fetches keyed by `z/x/y` so parallel map requests share one.
+  final Map<String, Future<List<int>?>> _inflight = {};
 
   String get baseUrl =>
       _server != null ? 'http://127.0.0.1:${_server!.port}' : '';
@@ -38,18 +38,25 @@ class RasterTileCacheService {
         await dir.create(recursive: true);
       }
 
+      _httpClient = HttpClient()
+        ..idleTimeout = const Duration(seconds: 30)
+        ..maxConnectionsPerHost = 6
+        ..connectionTimeout = const Duration(seconds: 8);
+
       _db = await openDatabase(
         '${dir.path}/raster_tile_cache.sqlite',
-        version: 1,
-        onCreate: (db, _) => db.execute(
-          'CREATE TABLE tiles ('
-          'zoom_level INTEGER NOT NULL, '
-          'tile_column INTEGER NOT NULL, '
-          'tile_row INTEGER NOT NULL, '
-          'tile_data BLOB NOT NULL, '
-          'accessed_at INTEGER NOT NULL, '
-          'PRIMARY KEY (zoom_level, tile_column, tile_row))',
-        ),
+        version: 2,
+        onCreate: (db, _) => _createSchema(db),
+        onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 2) {
+            try {
+              await db.execute(
+                'ALTER TABLE tiles ADD COLUMN fetched_at INTEGER NOT NULL '
+                'DEFAULT 0',
+              );
+            } catch (_) {}
+          }
+        },
       );
 
       _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -69,6 +76,19 @@ class RasterTileCacheService {
     } catch (e) {
       debugPrint('[RasterTileCacheService] Failed to start: $e');
     }
+  }
+
+  Future<void> _createSchema(Database db) async {
+    await db.execute(
+      'CREATE TABLE tiles ('
+      'zoom_level INTEGER NOT NULL, '
+      'tile_column INTEGER NOT NULL, '
+      'tile_row INTEGER NOT NULL, '
+      'tile_data BLOB NOT NULL, '
+      'accessed_at INTEGER NOT NULL, '
+      'fetched_at INTEGER NOT NULL, '
+      'PRIMARY KEY (zoom_level, tile_column, tile_row))',
+    );
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -100,7 +120,7 @@ class RasterTileCacheService {
     }
 
     response.headers.contentType = ContentType('image', 'png');
-    response.headers.set('Cache-Control', 'max-age=3600');
+    response.headers.set('Cache-Control', 'max-age=604800');
     response.add(tile);
     await response.close();
   }
@@ -111,11 +131,18 @@ class RasterTileCacheService {
 
     try {
       final rows = await db.rawQuery(
-        'SELECT tile_data FROM tiles '
+        'SELECT tile_data, fetched_at FROM tiles '
         'WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?',
         [z, x, y],
       );
       if (rows.isEmpty) return null;
+
+      final fetchedAt = rows.first['fetched_at'] as int? ?? 0;
+      final age = DateTime.now().millisecondsSinceEpoch - fetchedAt;
+      if (fetchedAt > 0 && age > _ttl.inMilliseconds) {
+        // Stale — treat as miss so we refresh from CDN.
+        return null;
+      }
 
       unawaited(
         db.rawUpdate(
@@ -132,18 +159,40 @@ class RasterTileCacheService {
     }
   }
 
-  Future<List<int>?> _fetchAndStore(int z, int x, int y) async {
-    final host = _cdnHosts[_hostIndex++ % _cdnHosts.length];
-    final url = Uri.parse(
-      'https://$host.basemaps.cartocdn.com/light_all/$z/$x/$y.png',
-    );
+  Future<List<int>?> _fetchAndStore(int z, int x, int y) {
+    final key = '$z/$x/$y';
+    final existing = _inflight[key];
+    if (existing != null) return existing;
+
+    final future = _doFetchAndStore(z, x, y).whenComplete(() {
+      _inflight.remove(key);
+    });
+    _inflight[key] = future;
+    return future;
+  }
+
+  Future<List<int>?> _doFetchAndStore(int z, int x, int y) async {
+    final client = _httpClient;
+    if (client == null) return null;
+
+    final host = MapBasemapConfig
+        .cdnHosts[_hostIndex++ % MapBasemapConfig.cdnHosts.length];
+    final url = Uri.parse(MapBasemapConfig.tileUrlForHost(host, z, x, y));
 
     try {
-      final res = await http.get(url).timeout(const Duration(seconds: 8));
-      if (res.statusCode != 200 || res.bodyBytes.isEmpty) return null;
+      final req = await client.getUrl(url);
+      final res = await req.close().timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
 
-      unawaited(_storeTile(z, x, y, res.bodyBytes));
-      return res.bodyBytes;
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in res) {
+        builder.add(chunk);
+      }
+      final bytes = builder.takeBytes();
+      if (bytes.isEmpty) return null;
+
+      unawaited(_storeTile(z, x, y, bytes));
+      return bytes;
     } catch (e) {
       debugPrint('[RasterTileCacheService] Fetch failed for $z/$x/$y: $e');
       return null;
@@ -155,12 +204,14 @@ class RasterTileCacheService {
     if (db == null) return;
 
     try {
+      final now = DateTime.now().millisecondsSinceEpoch;
       await db.insert('tiles', {
         'zoom_level': z,
         'tile_column': x,
         'tile_row': y,
         'tile_data': data,
-        'accessed_at': DateTime.now().millisecondsSinceEpoch,
+        'accessed_at': now,
+        'fetched_at': now,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       await _evictLeastRecentlyUsed(db);
@@ -172,7 +223,8 @@ class RasterTileCacheService {
   Future<void> _evictLeastRecentlyUsed(Database db) async {
     final countRows = await db.rawQuery('SELECT COUNT(*) AS c FROM tiles');
     final count = Sqflite.firstIntValue(countRows) ?? 0;
-    if (count <= _maxCachedTiles) return;
+    // Only evict when well over capacity to avoid thrashing every insert.
+    if (count <= _evictThreshold) return;
 
     await db.rawDelete(
       'DELETE FROM tiles WHERE rowid IN '
@@ -182,6 +234,9 @@ class RasterTileCacheService {
   }
 
   Future<void> stop() async {
+    _inflight.clear();
+    _httpClient?.close(force: true);
+    _httpClient = null;
     if (_db != null) {
       try {
         await _db!.close();
