@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'app.dart';
 import 'core/preferences/app_preferences.dart';
+import 'features/whami_air/air_preferences.dart';
 import 'navigation/whami_router.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await appPreferences.load();
+  await Future.wait([
+    appPreferences.load(),
+    airPreferences.load(),
+  ]);
 
   // Show UI immediately — sensors / permissions continue in the background.
   runApp(const WhamiApp());

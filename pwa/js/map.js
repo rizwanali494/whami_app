@@ -1,36 +1,37 @@
 const MapView = (() => {
   let map = null;
   let userMarker = null;
+  let lockMarker = null;
   let observer = null;
   let creating = false;
 
   const STYLE = {
     version: 8,
-    name: "WHAMI Carto Light",
+    name: "WHAMI Streets",
     sources: {
-      carto: {
+      osmfr: {
         type: "raster",
         tiles: [
-          "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-          "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-          "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+          "https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+          "https://b.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+          "https://c.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
         ],
         tileSize: 256,
-        maxzoom: 18,
+        maxzoom: 19,
         attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://www.openstreetmap.fr/">OSM France</a>',
       },
     },
     layers: [
       {
         id: "background",
         type: "background",
-        paint: { "background-color": "#F2EFE9" },
+        paint: { "background-color": "#E8EEF2" },
       },
       {
         id: "base-tiles",
         type: "raster",
-        source: "carto",
+        source: "osmfr",
         minzoom: 0,
         maxzoom: 22,
       },
@@ -133,6 +134,26 @@ const MapView = (() => {
     }
   }
 
+  function updateLock(lng, lat, name) {
+    if (!map) return;
+    if (lat == null || lng == null) {
+      lockMarker?.remove();
+      lockMarker = null;
+      return;
+    }
+    if (!lockMarker) {
+      const el = document.createElement("div");
+      el.className = "lock-dot";
+      el.title = name || "Locked to Real World";
+      el.innerHTML = '<span class="lock-core"></span>';
+      lockMarker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([lng, lat])
+        .addTo(map);
+    } else {
+      lockMarker.setLngLat([lng, lat]);
+    }
+  }
+
   function ensureAccuracy(lng, lat, accuracy) {
     if (!map || map.getSource("accuracy")) return;
     map.addSource("accuracy", {
@@ -164,5 +185,5 @@ const MapView = (() => {
     map?.resize();
   }
 
-  return { init, setPitch, recenter, updateUser, resize, ready };
+  return { init, setPitch, recenter, updateUser, updateLock, resize, ready };
 })();

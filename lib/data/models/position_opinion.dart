@@ -154,6 +154,31 @@ class PositionOpinion {
     );
   }
 
+  /// Barometric altitude consistency (vertical witness, not a lat/lng vote).
+  factory PositionOpinion.fromBarometer({
+    required double latitude,
+    required double longitude,
+    required int confidence,
+    required double uncertaintyRadius,
+    required String status,
+    String description = '',
+  }) {
+    return PositionOpinion(
+      id: 'baro',
+      name: 'Barometric',
+      shortCode: 'B',
+      sourceType: 'baro',
+      latitude: latitude,
+      longitude: longitude,
+      confidence: confidence,
+      uncertaintyRadius: uncertaintyRadius,
+      colorName: 'teal',
+      status: status,
+      description: description,
+      timestamp: DateTime.now(),
+    );
+  }
+
   /// Create a sky/celestial opinion
   factory PositionOpinion.fromSky({
     required double latitude,

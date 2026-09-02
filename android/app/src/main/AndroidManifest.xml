@@ -29,6 +29,10 @@
         android:maxSdkVersion="32"
         tools:replace="android:maxSdkVersion" />
 
+    <!-- Required for online OSM/CARTO basemap tiles when no offline pack is active. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:label="whami"
         android:name="${applicationName}"

@@ -21,6 +21,9 @@ import '../data/services/landmark_engine.dart';
 import '../data/services/position_matcher.dart';
 import '../data/services/trust_fusion_engine.dart';
 import '../data/services/trust_event_log.dart';
+import '../data/services/wmm/wmm_service.dart';
+import '../data/services/air_research_recorder.dart';
+import '../data/services/magnetic_trust_model.dart';
 import '../features/map/map_screen.dart';
 import '../features/scan/scan_screen.dart';
 import '../features/sensors/sensors_screen.dart';
@@ -29,6 +32,10 @@ import '../features/alerts/alerts_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
+import '../features/whami_air/air_screen.dart';
+import '../features/whami_air/efb_advisory_screen.dart';
+import '../features/whami_air/ground_station_screen.dart';
+import '../features/map/trust_timeline_screen.dart';
 import '../core/constants/app_colors.dart';
 import '../core/preferences/app_preferences.dart';
 import '../core/widgets/offline_banner.dart';
@@ -68,6 +75,10 @@ final mapRepo = MapRepository();
 final matcher = PositionMatcher();
 final fusionEngine = TrustFusionEngine();
 final eventLog = TrustEventLog();
+final wmmService = WmmService();
+final airRecorder = AirResearchRecorder();
+final magCalibration = MagCalibration();
+final kpService = KpIndexService();
 
 final whamiRepo = WhamiRepository(
   sensors: sensorManager,
@@ -79,6 +90,10 @@ final whamiRepo = WhamiRepository(
   mapRepository: mapRepo,
   rasterTileCacheService: rasterTileCacheService,
   glyphServer: glyphServer,
+  wmmService: wmmService,
+  airRecorder: airRecorder,
+  magCalibration: magCalibration,
+  kpService: kpService,
 );
 
 /// Starts long-lived local servers after Flutter binding is ready.
@@ -87,6 +102,18 @@ Future<void> bootstrapWhamiServices() async {
     rasterTileCacheService.start(),
     glyphServer.start(),
   ]);
+  try {
+    await wmmService.initialize();
+  } catch (e) {
+    debugPrint('[bootstrap] WMM init failed: $e');
+  }
+  try {
+    whamiRepo.anomalyLayer = await MagneticAnomalyLayer.loadAsset(
+      'assets/magnetic/demo_anomaly_corridor.json',
+    );
+  } catch (e) {
+    debugPrint('[bootstrap] Anomaly layer load failed: $e');
+  }
 }
 
 final whamiRouter = GoRouter(
@@ -158,6 +185,22 @@ final whamiRouter = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (_, __) => SettingsScreen(repository: whamiRepo),
+    ),
+    GoRoute(
+      path: '/air',
+      builder: (_, __) => AirScreen(repository: whamiRepo),
+    ),
+    GoRoute(
+      path: '/air/efb',
+      builder: (_, __) => EfbAdvisoryScreen(repository: whamiRepo),
+    ),
+    GoRoute(
+      path: '/air/ground-station',
+      builder: (_, __) => GroundStationScreen(repository: whamiRepo),
+    ),
+    GoRoute(
+      path: '/timeline',
+      builder: (_, __) => TrustTimelineScreen(repository: whamiRepo),
     ),
     // Legacy path redirects
     GoRoute(path: '/scan', redirect: (_, __) => '/verify'),

@@ -667,11 +667,13 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
                         ? _onUseAsAnchor
                         : null,
                     icon: Icon(
-                      _usedAsAnchor ? Icons.anchor : Icons.add_location,
+                      _usedAsAnchor ? Icons.lock : Icons.lock_outline,
                       size: 18,
                       color: _usedAsAnchor ? AppColors.gps : null,
                     ),
-                    label: Text(_usedAsAnchor ? 'Anchored' : 'Use as Anchor'),
+                    label: Text(
+                      _usedAsAnchor ? 'Locked to Real World' : 'Lock to Real World',
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _usedAsAnchor
                           ? AppColors.gps

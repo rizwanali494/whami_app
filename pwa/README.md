@@ -29,13 +29,19 @@ Geolocation only works on **localhost** or **HTTPS**.
 
 | Tab | Web behavior |
 |-----|----------------|
-| **Map** | MapLibre + Carto `light_all` tiles (`maxzoom` 18 / layer 22 so streets stay when you zoom in) |
-| **Verify** | Confirm pack landmarks; optional rear camera preview |
+| **Map** | MapLibre + OSM France street tiles (`maxzoom` 19 / layer 22) |
+| **Verify** | **Lock to Real World** on pack landmarks; optional rear camera |
 | **Sensors** | GPS, compass (`DeviceOrientation`), motion, GNSS altitude, fusion score |
-| **Offline** | Caches Carto tiles for a region bbox in Cache Storage |
-| **Activity** | Local trust event log |
+| **Offline** | Caches OSM France tiles for a region bbox in Cache Storage |
+| **Activity** | Local trust event log + **Trust Timeline Replay** |
 
 Trust bands match the native app: ≥75 reliable, 55–74 caution, &lt;55 unreliable.
+
+### Mind-changing features (v2.1)
+
+1. **GPS spoof / jump alarm** — red banner when GPS jumps or disagrees with a locked landmark  
+2. **Trust Timeline Replay** — scrub samples after a walk (Map → Replay, or Activity)  
+3. **Lock to Real World** — freeze a landmark anchor from Verify  
 
 ## Limits vs native
 
@@ -43,6 +49,7 @@ Trust bands match the native app: ≥75 reliable, 55–74 caution, &lt;55 unreli
 - No hardware barometer on most browsers
 - Compass needs an orientation-permission tap on iOS
 - First load needs the network (MapLibre CDN + tiles)
+- Spoof detection on web uses GPS jump + lock distance (no full mag/baro stack)
 
 ## Files
 

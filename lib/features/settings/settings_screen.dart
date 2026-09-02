@@ -190,6 +190,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     children: [
                       ListTile(
+                        leading: const Icon(Icons.flight, color: AppColors.whami),
+                        title: const Text(
+                          'WHAMI-Air Research',
+                          style: TextStyle(fontSize: 15),
+                        ),
+                        subtitle: const Text(
+                          'Advisory GNSS-denied trust · WMM · flight recorder',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.push('/air'),
+                      ),
+                      const Divider(height: 1, indent: 16),
+                      ListTile(
                         leading: const Icon(Icons.sensors, color: AppColors.imu),
                         title: const Text(
                           'Sensors',

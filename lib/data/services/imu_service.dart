@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 /// Type of motion detected by IMU
-enum MotionType { stationary, walking, vehicle, boat, unknown }
+enum MotionType { stationary, walking, vehicle, boat, aircraft, unknown }
 
 /// Raw IMU (inertial measurement unit) reading containing accelerometer & gyroscope data
 class ImuReading {

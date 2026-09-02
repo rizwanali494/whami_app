@@ -135,10 +135,11 @@ class LayerEngine {
   /// a previous partial run managed to add — which, before _safeAdd existed,
   /// meant a retry's very first call could fail and abort the entire retry
   /// too, freezing the map in a partial state permanently.
-  Future<void> _clearBaseMapLayers() async {
+  Future<void> _clearBaseMapLayers({bool preserveRaster = false}) async {
     final c = _controller;
     if (c == null) return;
     for (final id in _baseMapLayerIds) {
+      if (preserveRaster && id == 'base-tiles') continue;
       try {
         await c.removeLayer(id);
       } catch (_) {}
@@ -146,9 +147,11 @@ class LayerEngine {
     try {
       await c.removeSource('openmaptiles');
     } catch (_) {}
-    try {
-      await c.removeSource('open-tiles');
-    } catch (_) {}
+    if (!preserveRaster) {
+      try {
+        await c.removeSource('open-tiles');
+      } catch (_) {}
+    }
   }
 
   /// Sets up the base map (roads, water, buildings, land use, labels — or
@@ -176,21 +179,22 @@ class LayerEngine {
     String? localMBTilesUrl,
     String? rasterCacheUrl,
     /// When true, the light OSM raster was already baked into the style JSON
-    /// — skip the redundant imperative raster add for the no-pack path.
+    /// — skip clear/re-add for the no-pack path so streets stay visible.
     bool rasterAlreadyInStyle = false,
   }) async {
     final c = _controller;
     if (c == null) return;
 
-    await _clearBaseMapLayers();
-
     final hasLocalTiles =
         localMBTilesUrl != null && localMBTilesUrl.isNotEmpty;
 
-    // Raster was baked into the initial style — nothing to add or clear.
+    // Online default basemap is already in the style JSON. Clearing first
+    // then returning left a blank beige map (client OSM complaint).
     if (!hasLocalTiles && rasterAlreadyInStyle) return;
 
-    await _clearBaseMapLayers();
+    // Keep online streets under pack vector layers so the map never goes
+    // blank if MBTiles fail or while vector tiles are loading.
+    await _clearBaseMapLayers(preserveRaster: rasterAlreadyInStyle);
 
     if (hasLocalTiles) {
       await _safeAdd(

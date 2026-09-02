@@ -1,5 +1,7 @@
 const Storage = (() => {
   const KEY = "whami.pwa.v1";
+  const TIMELINE_KEY = "whami.pwa.timeline.v1";
+  const MAX_TIMELINE = 600;
 
   const defaults = {
     onboardingSeen: false,
@@ -10,6 +12,8 @@ const Storage = (() => {
     packs: {},
     events: [],
     lastFix: null,
+    lock: null,
+    spoofDismissed: false,
   };
 
   function read() {
@@ -43,5 +47,23 @@ const Storage = (() => {
     return data;
   }
 
-  return { read, write, addEvent, setPack };
+  function readTimeline() {
+    try {
+      return JSON.parse(localStorage.getItem(TIMELINE_KEY) || "[]");
+    } catch {
+      return [];
+    }
+  }
+
+  function addTimelineSample(sample) {
+    const next = [...readTimeline(), sample].slice(-MAX_TIMELINE);
+    localStorage.setItem(TIMELINE_KEY, JSON.stringify(next));
+    return next;
+  }
+
+  function clearTimeline() {
+    localStorage.setItem(TIMELINE_KEY, "[]");
+  }
+
+  return { read, write, addEvent, setPack, readTimeline, addTimelineSample, clearTimeline };
 })();

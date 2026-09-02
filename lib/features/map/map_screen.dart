@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/trust/trust_summary.dart';
 import '../../core/widgets/status_panel.dart';
 import '../../data/models/position_opinion.dart';
 import '../../data/repositories/whami_repository.dart';
+import '../whami_air/air_preferences.dart';
+import '../whami_air/widgets/air_trust_strip.dart';
 import 'widgets/whami_map_view.dart';
 import 'widgets/map_layer_control.dart';
+import 'widgets/spoof_alarm_banner.dart';
 
 /// Map-first home screen matching the trust-first mockup:
 /// full-bleed map, light header, white controls, glanceable trust card.
@@ -103,11 +107,10 @@ class _MapScreenState extends State<MapScreen> {
       opinions: opinions,
       isTracking: repo.isTracking,
     );
-    final activePack = repo.getRegionPackById(repo.activePackId);
-    final hasPack = activePack != null && activePack.status == 'downloaded';
     final permissionDenied = _permission == LocationPermission.denied ||
         _permission == LocationPermission.deniedForever;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final airMode = context.watch<AirPreferences>().airModeEnabled;
 
     return Scaffold(
       backgroundColor: const Color(0xFFE8EEF2),
@@ -133,6 +136,35 @@ class _MapScreenState extends State<MapScreen> {
                   child: Column(
                     children: [
                       _BrandHeader(onMenu: () => context.push('/settings')),
+                      if (repo.showSpoofAlarm) ...[
+                        const SizedBox(height: 10),
+                        SpoofAlarmBanner(
+                          message: repo.alertMessage,
+                          onVerify: () => context.go('/verify'),
+                          onDismiss: repo.dismissSpoofAlarm,
+                        ),
+                      ],
+                      if (repo.hasRealWorldLock) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: RealWorldLockChip(
+                            landmarkName: repo.landmarkAnchor!.name,
+                            onUnlock: repo.clearLandmarkAnchor,
+                            onTap: () => context.go('/verify'),
+                          ),
+                        ),
+                      ],
+                      if (airMode) ...[
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: () => context.push('/air'),
+                          child: AirTrustStrip(
+                            snapshot: repo.airTrust,
+                            compact: true,
+                          ),
+                        ),
+                      ],
                       if (permissionDenied) ...[
                         const SizedBox(height: 10),
                         _FrostedCard(
@@ -143,20 +175,28 @@ class _MapScreenState extends State<MapScreen> {
                             onAction: _requestPermission,
                           ),
                         ),
-                      ] else if (!hasPack && !repo.isTracking) ...[
-                        const SizedBox(height: 10),
-                        _FrostedCard(
-                          child: StatusPanel.empty(
-                            title: 'No active region pack',
-                            message:
-                                'Download an offline pack so landmarks and magnetic witnesses can vote.',
-                            actionLabel: 'Open Offline',
-                            onAction: () => context.go('/packs'),
-                          ),
-                        ),
                       ],
+                      // Online streets always show without a pack — do not
+                      // cover the map with a "download pack" modal.
                     ],
                   ),
+                ),
+              ),
+
+              Positioned(
+                left: 14,
+                bottom: sheetTop + 72,
+                child: FloatingActionButton.extended(
+                  heroTag: 'timeline',
+                  backgroundColor: Colors.white,
+                  foregroundColor: AppColors.textPrimary,
+                  elevation: 3,
+                  icon: const Icon(Icons.timeline, size: 20),
+                  label: const Text(
+                    'Replay',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                  onPressed: () => context.push('/timeline'),
                 ),
               ),
 

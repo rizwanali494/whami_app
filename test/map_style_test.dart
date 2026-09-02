@@ -47,9 +47,11 @@ void main() {
   group('MapBasemapConfig', () {
     test('centralizes OSM attribution and zoom ceilings', () {
       expect(MapBasemapConfig.attribution, contains('OpenStreetMap'));
-      expect(MapBasemapConfig.sourceMaxZoom, 18);
+      expect(MapBasemapConfig.sourceMaxZoom, 19);
       expect(MapBasemapConfig.layerMaxZoom, greaterThan(MapBasemapConfig.sourceMaxZoom));
       expect(MapBasemapConfig.tileUrls.length, 3);
+      expect(MapBasemapConfig.tileUrls.first, contains('openstreetmap.fr'));
+      expect(MapBasemapConfig.tileUrls.first, isNot(contains('cartocdn')));
     });
   });
 }

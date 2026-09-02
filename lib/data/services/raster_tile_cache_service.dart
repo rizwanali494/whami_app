@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../core/config/map_basemap_config.dart';
 
-/// Caches light OSM (CARTO) raster basemap tiles behind a local HTTP server
+/// Caches online street-map raster tiles behind a local HTTP server
 /// shaped like the CDN (`/{z}/{x}/{y}.png`).
 ///
 /// Cache hits are served immediately. Misses coalesce duplicate in-flight
@@ -16,6 +16,8 @@ class RasterTileCacheService {
   static const _maxCachedTiles = 4000;
   static const _evictThreshold = 4400; // 110% — avoid thrashing every insert
   static const _ttl = Duration(days: 7);
+  /// Bumped when CDN provider changes so watermark / stale tiles are dropped.
+  static const _dbVersion = 3;
 
   HttpServer? _server;
   Database? _db;
@@ -39,23 +41,19 @@ class RasterTileCacheService {
       }
 
       _httpClient = HttpClient()
+        ..userAgent = MapBasemapConfig.httpUserAgent
         ..idleTimeout = const Duration(seconds: 30)
         ..maxConnectionsPerHost = 6
         ..connectionTimeout = const Duration(seconds: 8);
 
       _db = await openDatabase(
         '${dir.path}/raster_tile_cache.sqlite',
-        version: 2,
+        version: _dbVersion,
         onCreate: (db, _) => _createSchema(db),
-        onUpgrade: (db, oldVersion, _) async {
-          if (oldVersion < 2) {
-            try {
-              await db.execute(
-                'ALTER TABLE tiles ADD COLUMN fetched_at INTEGER NOT NULL '
-                'DEFAULT 0',
-              );
-            } catch (_) {}
-          }
+        onUpgrade: (db, oldVersion, newVersion) async {
+          // Provider switch (e.g. CARTO watermark → OSM FR): wipe stale tiles.
+          await db.execute('DROP TABLE IF EXISTS tiles');
+          await _createSchema(db);
         },
       );
 
@@ -181,6 +179,7 @@ class RasterTileCacheService {
 
     try {
       final req = await client.getUrl(url);
+      req.headers.set(HttpHeaders.userAgentHeader, MapBasemapConfig.httpUserAgent);
       final res = await req.close().timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return null;
 

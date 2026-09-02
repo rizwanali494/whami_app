@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/widgets/status_panel.dart';
 import '../../data/repositories/whami_repository.dart';
@@ -36,6 +37,25 @@ class AlertsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Card(
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.timeline,
+                            color: AppColors.whami,
+                          ),
+                          title: const Text('Trust Timeline Replay'),
+                          subtitle: Text(
+                            repository.trustTimeline.isEmpty
+                                ? 'Start tracking to record evidence'
+                                : '${repository.trustTimeline.length} samples — scrub green → amber → red',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => context.push('/timeline'),
+                        ),
+                      ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Row(

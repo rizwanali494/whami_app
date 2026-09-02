@@ -16,6 +16,16 @@ WHAMI fuses multiple on-device witnesses (GPS, landmarks, magnetometer, IMU, sky
 
 Diagnostics, sensors, units, outdoor mode, storage, and privacy live under the Map overflow menu (**Diagnostics & Settings**).
 
+## WHAMI-Air (aviation research)
+
+Advisory GNSS-denied position trust — see [docs/WHAMI_AIR.md](docs/WHAMI_AIR.md).
+
+Open **Diagnostics & Settings → WHAMI-Air Research**. Desktop Ground Station:
+
+```bash
+flutter run -d windows   # or linux
+```
+
 ## Run
 
 ```bash
@@ -58,7 +68,7 @@ Local MBTiles and glyph HTTP servers start concurrently in `bootstrapWhamiServic
 
 ## Default map (no pack)
 
-With no offline region pack active, the MapLibre style embeds a **light OSM-derived raster basemap** (CARTO `light_all`) on first paint so streets appear immediately. Settings live in `lib/core/config/map_basemap_config.dart` (tile URLs, OpenStreetMap attribution, source maxzoom 18 / layer maxzoom 22).
+With no offline pack (and also under an active pack as a safety underlay), the MapLibre style embeds an **online OSM street raster** (OSM France tiles — no API key) so streets appear immediately without Start Tracking. Offline packs still add their vector layers on top. Settings live in `lib/core/config/map_basemap_config.dart`.
 
 Tiles are proxied through `RasterTileCacheService` (keep-alive HTTP, coalesced fetches, 7-day TTL). When a pack is activated, local vector MBTiles replace the raster layer.
 

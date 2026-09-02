@@ -73,13 +73,13 @@ class TrustEvent {
   }) {
     return TrustEvent(
       id: 'landmark_${DateTime.now().millisecondsSinceEpoch}',
-      title: 'Landmark Anchor Confirmed',
+      title: 'Locked to Real World',
       severity: 'info',
       description:
-          '$landmarkName matched and used as a physical-world witness. Confidence: $confidence%.',
-      actionHint: 'Keep tracking to maintain consensus.',
+          '$landmarkName locked as a physical-world anchor ($confidence%). GPS can be cross-checked against it.',
+      actionHint: 'If GPS jumps away from this lock, WHAMI will warn you.',
       isOngoing: false,
-      iconName: 'location_on',
+      iconName: 'lock',
     );
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/preferences/app_preferences.dart';
+import 'features/whami_air/air_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'navigation/whami_router.dart';
 
@@ -9,8 +10,11 @@ class WhamiApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<AppPreferences>.value(
-      value: appPreferences,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AppPreferences>.value(value: appPreferences),
+        ChangeNotifierProvider<AirPreferences>.value(value: airPreferences),
+      ],
       child: Consumer<AppPreferences>(
         builder: (context, prefs, _) {
           return MaterialApp.router(

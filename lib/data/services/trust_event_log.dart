@@ -19,19 +19,23 @@ class TrustEventLog {
     String? actionHint,
     bool isOngoing = false,
   }) {
-    final event = TrustEvent(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      title: title,
-      severity: severity,
-      timestamp: DateTime.now(),
-      description: description,
-      iconName: iconName,
-      actionHint: actionHint,
-      isOngoing: isOngoing,
+    add(
+      TrustEvent(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        title: title,
+        severity: severity,
+        timestamp: DateTime.now(),
+        description: description,
+        iconName: iconName,
+        actionHint: actionHint,
+        isOngoing: isOngoing,
+      ),
     );
+  }
 
-    _events.insert(0, event); // newest first
-    // Limit log to last 100 entries to prevent memory growth
+  /// Insert a pre-built [TrustEvent] (e.g. factory constructors).
+  void add(TrustEvent event) {
+    _events.insert(0, event);
     if (_events.length > 100) {
       _events.removeLast();
     }

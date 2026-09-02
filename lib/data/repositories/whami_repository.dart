@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../core/constants/connectivity_status.dart';
+import '../../core/trust/trust_summary.dart';
+import '../../features/whami_air/air_preferences.dart';
+import '../../features/whami_air/air_trust.dart';
 import '../models/position_opinion.dart';
 import '../models/sensor_status.dart';
 import '../models/region_pack.dart';
@@ -15,6 +18,12 @@ import '../services/trust_event_log.dart';
 import '../services/raster_tile_cache_service.dart';
 import '../services/maplibre_connectivity_service.dart';
 import '../services/glyph_server.dart';
+import '../services/wmm/wmm_service.dart';
+import '../services/wmm/wmm_field.dart';
+import '../services/air_research_recorder.dart';
+import '../services/magnetic_trust_model.dart';
+import '../services/trust_timeline_recorder.dart';
+import '../models/trust_timeline_sample.dart';
 import 'region_repository.dart';
 import 'landmark_repository.dart';
 import 'map_repository.dart';
@@ -24,6 +33,11 @@ class WhamiRepository extends ChangeNotifier {
   final PositionMatcher _matcher;
   final TrustFusionEngine _fusionEngine;
   final TrustEventLog _eventLog;
+  final WmmService wmmService;
+  final AirResearchRecorder airRecorder;
+  final MagCalibration magCalibration;
+  final KpIndexService kpService;
+  MagneticAnomalyLayer anomalyLayer;
 
   // Delegated Sub-Repositories
   final RegionRepository regionRepository;
@@ -40,8 +54,14 @@ class WhamiRepository extends ChangeNotifier {
   bool _isTracking = false;
   final List<Map<String, double>> _trail = [];
   List<Landmark> _activePackLandmarks = [];
+  AirTrustSnapshot? _airTrust;
+  WmmResidual? _lastWmmResidual;
+  FusedPosition? _lastFusion;
+  final TrustTimelineRecorder trustTimeline = TrustTimelineRecorder();
+  bool _spoofAlarmVisible = false;
+  bool _spoofAlarmDismissed = false;
 
-  /// Visual landmark used as a no-GPS position anchor ("Use as anchor").
+  /// Visual landmark used as a real-world lock / no-GPS anchor.
   Landmark? _landmarkAnchor;
 
   // Cache of the last GPS fix a landmark query was run for, so snapshots
@@ -75,6 +95,16 @@ class WhamiRepository extends ChangeNotifier {
   // Getters
   SensorManager get sensors => _sensors;
   TrustEventLog get eventLog => _eventLog;
+  AirTrustSnapshot? get airTrust => _airTrust;
+  WmmResidual? get lastWmmResidual => _lastWmmResidual;
+  FusedPosition? get lastFusion => _lastFusion;
+  Landmark? get landmarkAnchor => _landmarkAnchor;
+  bool get hasRealWorldLock => _landmarkAnchor != null;
+  bool get gnssSuspicious => _lastFusion?.gnssSuspicious ?? false;
+  bool get showSpoofAlarm =>
+      _spoofAlarmVisible &&
+      !_spoofAlarmDismissed &&
+      (_lastFusion?.gnssSuspicious == true);
 
   List<PositionOpinion> get positionOpinions => _opinions;
   int get trustScore => _trustScore;
@@ -118,10 +148,18 @@ class WhamiRepository extends ChangeNotifier {
     required this.mapRepository,
     required this.rasterTileCacheService,
     required this.glyphServer,
+    required this.wmmService,
+    required this.airRecorder,
+    MagCalibration? magCalibration,
+    KpIndexService? kpService,
+    MagneticAnomalyLayer? anomalyLayer,
   }) : _sensors = sensors,
        _matcher = matcher,
        _fusionEngine = fusionEngine,
-       _eventLog = eventLog {
+       _eventLog = eventLog,
+       magCalibration = magCalibration ?? MagCalibration(),
+       kpService = kpService ?? KpIndexService(),
+       anomalyLayer = anomalyLayer ?? MagneticAnomalyLayer.empty() {
     _initDefaultPack();
     _initConnectivity();
     regionRepository.addListener(notifyListeners);
@@ -275,6 +313,9 @@ class WhamiRepository extends ChangeNotifier {
     _isTracking = !_isTracking;
     if (_isTracking) {
       _trail.clear();
+      trustTimeline.clear();
+      _spoofAlarmDismissed = false;
+      _spoofAlarmVisible = false;
       _sensors.imuService.resetDeadReckoning();
       _sensors.gpsService.startListening();
       _sensors.imuService.startListening();
@@ -286,11 +327,24 @@ class WhamiRepository extends ChangeNotifier {
       });
 
       _eventLog.addEvent(
-        title: 'Tracking Started',
-        description: 'All sensor streams opened. Fusing real-time.',
+        title: TrustEvent.trackingStarted().title,
+        description: TrustEvent.trackingStarted().description,
         severity: 'info',
-        iconName: 'play_arrow',
+        iconName: 'gps_fixed',
       );
+
+      if (airPreferences.airModeEnabled && airPreferences.recordingEnabled) {
+        unawaited(
+          airRecorder.startFlight(
+            meta: {
+              'wmmModel': wmmService.modelName,
+              'wmmEpoch': wmmService.epoch,
+              'kp': kpService.kp,
+              'anomalyLayer': anomalyLayer.hasData ? 'loaded' : 'none',
+            },
+          ),
+        );
+      }
     } else {
       _sensorSub?.cancel();
       _sensorSub = null;
@@ -302,6 +356,10 @@ class WhamiRepository extends ChangeNotifier {
         severity: 'info',
         iconName: 'stop',
       );
+
+      if (airRecorder.isRecording) {
+        unawaited(airRecorder.stopFlight());
+      }
     }
     notifyListeners();
   }
@@ -309,11 +367,33 @@ class WhamiRepository extends ChangeNotifier {
   /// Process live sensor snapshot and feed results into fusion algorithm
   Future<void> _processSnapshot(SensorSnapshot snapshot) async {
     final gpsReading = snapshot.gps;
-    final magReading = snapshot.magnetometer;
+    var magReading = snapshot.magnetometer;
 
     LandmarkMatch? lMatch;
     MagneticMatch? mMatch;
     SeamapMatch? sMatch;
+    double? wmmResidualUt;
+    int? wmmAgreementScore;
+    String? wmmStatus;
+    String? wmmDescription;
+    WmmResidual? wmmRes;
+
+    if (magReading != null && magCalibration.calibrated) {
+      final c = magCalibration.apply(magReading.x, magReading.y, magReading.z);
+      final strength = magCalibration.fieldStrength(
+        magReading.x,
+        magReading.y,
+        magReading.z,
+      );
+      magReading = MagnetometerReading(
+        x: c.$1,
+        y: c.$2,
+        z: c.$3,
+        heading: magReading.heading,
+        fieldStrength: strength,
+        timestamp: magReading.timestamp,
+      );
+    }
 
     if (gpsReading != null) {
       // Snapshots fire on every sensor tick (IMU alone ticks at 5Hz), but the
@@ -339,10 +419,46 @@ class WhamiRepository extends ChangeNotifier {
         lMatch = _lastLandmarkMatch;
       }
 
-      // Perform expected WMM magnetic baseline comparisons if region has base grid.
-      // When no offline magnetic GeoJSON is loaded, fall back to the live
-      // magnetometer baseline so magnetic remains a real witness in fusion.
-      if (magReading != null) {
+      // Prefer official WMM when available; else live baseline / pack match.
+      if (magReading != null && wmmService.isReady) {
+        final altKm = (gpsReading.altitude.isFinite
+                ? gpsReading.altitude
+                : 0.0) /
+            1000.0;
+        wmmRes = wmmService.residual(
+          latitudeDeg: gpsReading.latitude,
+          longitudeDeg: gpsReading.longitude,
+          measuredFMicroTesla: magReading.fieldStrength,
+          altitudeKm: altKm.clamp(-1.0, 100.0),
+          kpIndex: airPreferences.airModeEnabled
+              ? airPreferences.kpIndex
+              : kpService.kp,
+        );
+        // Optional anomaly layer adjusts expected F before residual display.
+        if (anomalyLayer.hasData) {
+          final dF =
+              anomalyLayer.deltaFnT(gpsReading.latitude, gpsReading.longitude) /
+                  1000.0; // nT → µT
+          final adjustedMeasured = magReading.fieldStrength - dF;
+          wmmRes = wmmService.residual(
+            latitudeDeg: gpsReading.latitude,
+            longitudeDeg: gpsReading.longitude,
+            measuredFMicroTesla: adjustedMeasured,
+            altitudeKm: altKm.clamp(-1.0, 100.0),
+            kpIndex: airPreferences.kpIndex,
+          );
+        }
+        _lastWmmResidual = wmmRes;
+        wmmResidualUt = wmmRes.residualMicroTesla;
+        wmmAgreementScore = wmmRes.agreementScore;
+        wmmStatus = wmmRes.status;
+        wmmDescription = wmmRes.description;
+        mMatch = MagneticMatch(
+          expectedStrength: wmmRes.model.fMicroTesla,
+          stability: (wmmRes.agreementScore / 100).clamp(0.2, 1.0),
+          deviation: wmmRes.residualMicroTesla,
+        );
+      } else if (magReading != null) {
         final magService = _sensors.magnetometerService;
         mMatch = MagneticMatch(
           expectedStrength: magService.baselineStrength > 0
@@ -379,26 +495,136 @@ class WhamiRepository extends ChangeNotifier {
       landmarkAnchorLat: _landmarkAnchor?.latitude,
       landmarkAnchorLng: _landmarkAnchor?.longitude,
       landmarkAnchorName: _landmarkAnchor?.name,
+      wmmResidualUt: wmmResidualUt,
+      wmmAgreementScore: wmmAgreementScore,
+      wmmStatus: wmmStatus,
+      wmmDescription: wmmDescription,
     );
 
+    _lastFusion = fusion;
     _opinions = fusion.opinions;
     _trustScore = fusion.confidence;
 
+    final summary = TrustSummary.fromOpinions(
+      trustScore: fusion.confidence,
+      opinions: fusion.opinions,
+      isTracking: true,
+    );
+    final activeCount =
+        fusion.opinions.where((o) => o.status == 'active').length;
+    final band = airTrustBandFrom(
+      trustScore: fusion.confidence,
+      level: summary.level,
+      isTracking: true,
+      activeWitnesses: activeCount,
+    );
+    _airTrust = AirTrustSnapshot(
+      band: band,
+      positionTrust: fusion.confidence,
+      confidenceRadiusM: fusion.uncertaintyRadius,
+      gnssSuspicious: fusion.gnssSuspicious,
+      gnssUnavailable: gpsReading == null,
+      magneticAgreement: fusion.magneticAgreement,
+      baroConsistency: fusion.baroConsistency,
+      celestialAgreement: fusion.celestialAgreement,
+      wmmResidualUt: fusion.wmmResidualUt,
+      baroGpsAltDeltaM: fusion.baroGpsAltDeltaM,
+      sourceHierarchy: fusion.sourceHierarchy,
+      advisoryMessage: fusion.alertMessage,
+    );
+
     if (fusion.alertSeverity != _alertSeverity &&
         fusion.alertSeverity != 'none') {
-      _eventLog.addEvent(
-        title: 'Fusion Status Change',
-        description: fusion.alertMessage,
-        severity: fusion.alertSeverity,
-        iconName: 'warning',
-      );
+      if (fusion.gnssSuspicious) {
+        _eventLog.add(
+          TrustEvent.gpsJump(
+            distance: fusion.uncertaintyRadius,
+          ),
+        );
+      } else {
+        _eventLog.addEvent(
+          title: 'Fusion Status Change',
+          description: fusion.alertMessage,
+          severity: fusion.alertSeverity,
+          iconName: 'warning',
+        );
+      }
+    }
+
+    if (fusion.gnssSuspicious) {
+      _spoofAlarmVisible = true;
+      if (_alertSeverity != 'critical' && _alertSeverity != 'warning') {
+        // Rising edge handled above; keep banner sticky until dismiss/clear.
+      }
+    } else if (!fusion.gnssSuspicious && _spoofAlarmVisible) {
+      // Auto-clear sticky alarm once witnesses agree again.
+      _spoofAlarmVisible = false;
+      _spoofAlarmDismissed = false;
     }
 
     _alertMessage = fusion.alertMessage;
     _alertSeverity = fusion.alertSeverity;
 
-    // Record trail
+    // Record trail + trust timeline sample (throttled to ~1 Hz via trail length)
     _trail.add({'latitude': fusion.latitude, 'longitude': fusion.longitude});
+    _recordTimelineSample(fusion, summary);
+
+    if (airPreferences.airModeEnabled &&
+        airPreferences.recordingEnabled &&
+        airRecorder.isRecording &&
+        _airTrust != null) {
+      unawaited(
+        airRecorder.appendFromSensors(
+          air: _airTrust!,
+          gnss: gpsReading == null
+              ? null
+              : {
+                  'lat': gpsReading.latitude,
+                  'lng': gpsReading.longitude,
+                  'alt': gpsReading.altitude,
+                  'acc': gpsReading.accuracy,
+                  'speed': gpsReading.speed,
+                },
+          mag: magReading == null
+              ? null
+              : {
+                  'x': magReading.x,
+                  'y': magReading.y,
+                  'z': magReading.z,
+                  'f': magReading.fieldStrength,
+                  'heading': magReading.heading,
+                },
+          imu: snapshot.imu == null
+              ? null
+              : {
+                  'dx': snapshot.imu!.displacementX,
+                  'dy': snapshot.imu!.displacementY,
+                  'motion': snapshot.imu!.motionType.name,
+                },
+          baro: snapshot.barometer == null
+              ? null
+              : {
+                  'hPa': snapshot.barometer!.pressure,
+                  'altM': snapshot.barometer!.estimatedAltitude,
+                },
+          sky: snapshot.sky == null
+              ? null
+              : {
+                  'sunAz': snapshot.sky!.sunAzimuth,
+                  'sunEl': snapshot.sky!.sunElevation,
+                  'conf': snapshot.sky!.confidence,
+                },
+          wmm: wmmRes == null
+              ? null
+              : {
+                  'F_uT': wmmRes.model.fMicroTesla,
+                  'residual_uT': wmmRes.residualMicroTesla,
+                  'decl': wmmRes.model.declination,
+                },
+          kpIndex: airPreferences.kpIndex,
+        ),
+      );
+    }
 
     notifyListeners();
   }
@@ -410,7 +636,7 @@ class WhamiRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Create and commit a matched visual landmark as an anchor for no-GPS fusion.
+  /// Create and commit a matched visual landmark as a real-world lock.
   void setLandmarkAnchor(Landmark landmark, int matchPercent) {
     _landmarkAnchor = landmark;
     // Seed the trail so IMU dead-reckoning and trusted position have a base.
@@ -419,12 +645,11 @@ class WhamiRepository extends ChangeNotifier {
       'longitude': landmark.longitude,
     });
     centerMapOn(landmark.latitude, landmark.longitude);
-    _eventLog.addEvent(
-      title: 'Visual Anchor Set',
-      description:
-          '${landmark.name} matched at $matchPercent% — used as position anchor.',
-      severity: 'info',
-      iconName: 'anchor',
+    _eventLog.add(
+      TrustEvent.landmarkMatched(
+        landmarkName: landmark.name,
+        confidence: matchPercent,
+      ),
     );
     notifyListeners();
   }
@@ -432,7 +657,55 @@ class WhamiRepository extends ChangeNotifier {
   void clearLandmarkAnchor() {
     if (_landmarkAnchor == null) return;
     _landmarkAnchor = null;
+    _eventLog.addEvent(
+      title: 'Real-World Lock Cleared',
+      description: 'Visual landmark lock removed.',
+      severity: 'info',
+      iconName: 'lock_open',
+    );
     notifyListeners();
+  }
+
+  void dismissSpoofAlarm() {
+    _spoofAlarmDismissed = true;
+    notifyListeners();
+  }
+
+  DateTime? _lastTimelineSampleAt;
+
+  void _recordTimelineSample(FusedPosition fusion, TrustSummary summary) {
+    final now = DateTime.now();
+    // ~1 Hz to keep memory reasonable while tracking.
+    if (_lastTimelineSampleAt != null &&
+        now.difference(_lastTimelineSampleAt!) < const Duration(seconds: 1)) {
+      return;
+    }
+    _lastTimelineSampleAt = now;
+
+    final scores = <String, int>{};
+    final broken = <String>[];
+    for (final op in fusion.opinions) {
+      if (op.status == 'unavailable') continue;
+      scores[op.shortCode] = op.confidence;
+      if (op.status == 'unstable' || op.confidence < 55) {
+        broken.add(op.name);
+      }
+    }
+
+    trustTimeline.add(
+      TrustTimelineSample(
+        timestamp: now,
+        trustScore: fusion.confidence,
+        level: summary.level.name,
+        latitude: fusion.latitude,
+        longitude: fusion.longitude,
+        uncertaintyM: fusion.uncertaintyRadius,
+        gnssSuspicious: fusion.gnssSuspicious,
+        alertMessage: fusion.alertSeverity == 'none' ? null : fusion.alertMessage,
+        witnessScores: scores,
+        brokenWitnesses: broken,
+      ),
+    );
   }
 
   /// Record AR visual confirmation match scores

@@ -1,0 +1,11 @@
+{
+  "name": "demo_corridor_anomaly",
+  "description": "Sparse demo anomaly deltas (nT) for WHAMI-Air Phase 1b. Replace with EMAG2/WMMHR corridor extracts for production demos.",
+  "cells": [
+    { "lat": 37.78, "lng": -122.42, "dF_nT": 120 },
+    { "lat": 37.80, "lng": -122.40, "dF_nT": 95 },
+    { "lat": 37.75, "lng": -122.45, "dF_nT": 140 },
+    { "lat": 51.90, "lng": 4.43, "dF_nT": 80 },
+    { "lat": 32.70, "lng": -117.20, "dF_nT": 110 }
+  ]
+}

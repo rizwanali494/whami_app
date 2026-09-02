@@ -72,6 +72,8 @@ flutter:
     - assets/catalog.json
     - assets/glyphs/Noto Sans Regular/
     - assets/images/
+    - assets/wmm/WMM.COF
+    - assets/magnetic/demo_anomaly_corridor.json
 
 flutter_native_splash:
   color: "#FFFFFF"

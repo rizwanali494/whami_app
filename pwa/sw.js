@@ -1,15 +1,15 @@
-const SHELL = "whami-shell-v11";
-const TILES = "whami-tiles-v1";
+const SHELL = "whami-shell-v12";
+const TILES = "whami-tiles-v2";
 const SHELL_URLS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./css/app.css?v=11",
-  "./js/storage.js?v=6",
-  "./js/trust.js?v=6",
-  "./js/sensors.js?v=6",
-  "./js/map.js?v=6",
-  "./js/app.js?v=10",
+  "./css/app.css?v=12",
+  "./js/storage.js?v=7",
+  "./js/trust.js?v=7",
+  "./js/sensors.js?v=7",
+  "./js/map.js?v=7",
+  "./js/app.js?v=11",
   "./icons/app_icon.png",
   "./icons/Icon-192.png",
   "./icons/Icon-512.png",
@@ -39,8 +39,10 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   if (
+    url.hostname.includes("tile.openstreetmap.fr") ||
     url.hostname.includes("basemaps.cartocdn.com") ||
-    url.hostname.includes("unpkg.com")
+    url.hostname.includes("unpkg.com") ||
+    url.hostname.includes("jsdelivr.net")
   ) {
     event.respondWith(staleWhileRevalidate(event.request, TILES));
     return;

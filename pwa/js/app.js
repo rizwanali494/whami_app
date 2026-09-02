@@ -7,6 +7,8 @@ const App = (() => {
     imu: null,
     sky: null,
     landmark: null,
+    lock: null,
+    lastTrusted: null,
     locError: null,
     detailsOpen: true,
     sheet: 0.42,
@@ -16,6 +18,9 @@ const App = (() => {
     verifyTab: "landmark",
     packFilter: "All",
     packQuery: "",
+    spoofDismissed: false,
+    timelineIndex: 0,
+    lastTimelineAt: 0,
     ...Storage.read(),
   };
 
@@ -32,6 +37,8 @@ const App = (() => {
       metric: state.metric,
       activePackId: state.activePackId,
       packs: state.packs,
+      lock: state.lock,
+      spoofDismissed: state.spoofDismissed,
       lastFix: state.gps
         ? { lat: state.gps.lat, lng: state.gps.lng, at: Date.now() }
         : state.lastFix,
@@ -61,9 +68,10 @@ const App = (() => {
       packs: "packs-screen",
       activity: "activity-screen",
       settings: "settings-screen",
+      timeline: "timeline-screen",
     };
     showScreen(map[route] || "map-screen");
-    setChrome(true);
+    setChrome(route !== "timeline");
     $("app-nav").querySelectorAll("button").forEach((b) => {
       b.classList.toggle("on", b.dataset.route === route);
     });
@@ -71,7 +79,12 @@ const App = (() => {
       requestAnimationFrame(() => {
         MapView.init();
         MapView.resize();
+        if (state.lock) MapView.updateLock(state.lock.lng, state.lock.lat, state.lock.name);
       });
+    }
+    if (route === "timeline") {
+      const samples = Storage.readTimeline();
+      state.timelineIndex = Math.max(0, samples.length - 1);
     }
     render();
   }
@@ -84,6 +97,8 @@ const App = (() => {
       imu: state.imu,
       sky: state.sky,
       landmark: state.landmark,
+      lock: state.lock,
+      lastTrusted: state.lastTrusted,
       activePackId: state.activePackId,
       packs: state.packs,
     });
@@ -104,6 +119,30 @@ const App = (() => {
     return `${net} · ${pack} · All Sources Active`;
   }
 
+  function maybeRecordTimeline(t) {
+    if (!state.tracking || !state.gps) return;
+    const now = Date.now();
+    if (now - state.lastTimelineAt < 1000) return;
+    state.lastTimelineAt = now;
+    Storage.addTimelineSample({
+      at: now,
+      score: t.score,
+      level: t.level,
+      gnssSuspicious: t.gnssSuspicious,
+      broken: t.broken,
+      lat: state.gps.lat,
+      lng: state.gps.lng,
+      lockName: state.lock?.name || null,
+    });
+  }
+
+  function updateTrustedFix(t) {
+    if (!state.tracking || !state.gps) return;
+    if (!t.gnssSuspicious && t.score >= 55) {
+      state.lastTrusted = { lat: state.gps.lat, lng: state.gps.lng, at: Date.now() };
+    }
+  }
+
   function renderStatus() {
     const el = $("status-bar");
     if (!el) return;
@@ -112,8 +151,32 @@ const App = (() => {
     el.classList.toggle("off", !state.online);
   }
 
+  function renderSpoofAndLock(t) {
+    const banner = $("spoof-banner");
+    const lockChip = $("lock-chip");
+    const showSpoof = t.gnssSuspicious && !state.spoofDismissed;
+    if (banner) {
+      banner.classList.toggle("hidden", !showSpoof);
+      if (showSpoof) {
+        $("spoof-title").textContent = "GPS SUSPICIOUS — DON'T TRUST THIS PIN";
+        $("spoof-body").textContent = t.alertMessage || "GPS jumped without matching witnesses.";
+      }
+    }
+    if (lockChip) {
+      const has = Boolean(state.lock);
+      lockChip.classList.toggle("hidden", !has);
+      if (has) {
+        $("lock-chip-label").textContent = `Locked · ${state.lock.name}`;
+      }
+    }
+  }
+
   function renderTrust() {
     const t = fused();
+    updateTrustedFix(t);
+    maybeRecordTimeline(t);
+    renderSpoofAndLock(t);
+
     $("trust-headline").textContent = t.headline;
     $("trust-subtitle").textContent = t.subtitle;
     $("trust-explain").textContent = t.explanation;
@@ -121,20 +184,24 @@ const App = (() => {
     $("trust-score-wrap").style.color = t.color;
     $("trust-icon").style.background = t.color;
     $("trust-icon").innerHTML =
-      t.level === "reliable"
-        ? icon("check")
-        : t.level === "caution"
-          ? icon("warn")
-          : t.level === "unreliable"
-            ? icon("bad")
+      t.gnssSuspicious || t.level === "unreliable"
+        ? icon("bad")
+        : t.level === "reliable"
+          ? icon("check")
+          : t.level === "caution"
+            ? icon("warn")
             : icon("wait");
 
     const cta = $("verify-cta");
-    if (t.level === "caution" || t.level === "unreliable") {
+    if (t.gnssSuspicious || t.level === "caution" || t.level === "unreliable") {
       cta.classList.remove("hidden");
-      cta.textContent = t.level === "caution" ? "Open Verify" : "Verify or get offline pack";
-      cta.style.border = `1px solid ${t.color}`;
-      cta.style.color = t.color;
+      cta.textContent = t.gnssSuspicious
+        ? "Lock to Real World"
+        : t.level === "caution"
+          ? "Open Verify"
+          : "Verify or get offline pack";
+      cta.style.border = `1px solid ${t.gnssSuspicious ? "#E53935" : t.color}`;
+      cta.style.color = t.gnssSuspicious ? "#E53935" : t.color;
     } else {
       cta.classList.add("hidden");
     }
@@ -173,10 +240,6 @@ const App = (() => {
       notice.classList.remove("hidden");
       notice.innerHTML = `<h3>Location permission needed</h3><p>${state.locError}</p><button id="ask-loc">Allow location</button>`;
       $("ask-loc").onclick = startTracking;
-    } else if (!packLoaded() && !state.tracking) {
-      notice.classList.remove("hidden");
-      notice.innerHTML = `<h3>No active region pack</h3><p>Download an offline pack so landmarks and magnetic witnesses can vote.</p><button id="open-packs">Open Offline</button>`;
-      $("open-packs").onclick = () => go("packs");
     } else {
       notice.classList.add("hidden");
     }
@@ -224,8 +287,12 @@ const App = (() => {
       {
         id: "cam",
         title: "Landmark camera",
-        body: state.landmark ? `Verified ${state.landmark.name}` : "Open Verify to scan",
-        value: state.landmark?.confidence || 0,
+        body: state.lock
+          ? `Locked · ${state.lock.name}`
+          : state.landmark
+            ? `Verified ${state.landmark.name}`
+            : "Open Verify to lock",
+        value: state.lock ? 90 : state.landmark?.confidence || 0,
         color: "var(--landmark)",
       },
       {
@@ -315,17 +382,93 @@ const App = (() => {
     $("act-crit").textContent = crit;
     $("act-warn").textContent = warn;
     $("act-info").textContent = events.length - crit - warn;
-    $("activity-list").innerHTML = events.length
-      ? events
-          .map(
-            (e) => `<article class="card event ${e.severity || "info"}">
+    const timelineLink = `<article class="card timeline-cta">
+      <h3>Trust Timeline Replay</h3>
+      <p>Scrub trust green → amber → red and see which witness broke.</p>
+      <button class="btn btn-primary" id="open-timeline" type="button">Open Replay</button>
+    </article>`;
+    $("activity-list").innerHTML =
+      timelineLink +
+      (events.length
+        ? events
+            .map(
+              (e) => `<article class="card event ${e.severity || "info"}">
               <h3>${e.title}</h3>
               <p>${e.body}</p>
               <time>${new Date(e.at).toLocaleString()}</time>
             </article>`,
-          )
-          .join("")
-      : '<article class="card"><h3>No activity yet</h3><p>Start tracking to record trust events.</p></article>';
+            )
+            .join("")
+        : '<article class="card"><h3>No activity yet</h3><p>Start tracking to record trust events.</p></article>');
+    $("open-timeline")?.addEventListener("click", () => go("timeline"));
+  }
+
+  function renderTimeline() {
+    const samples = Storage.readTimeline();
+    const empty = $("timeline-empty");
+    const body = $("timeline-body");
+    if (!samples.length) {
+      empty?.classList.remove("hidden");
+      body?.classList.add("hidden");
+      return;
+    }
+    empty?.classList.add("hidden");
+    body?.classList.remove("hidden");
+    const idx = Math.min(state.timelineIndex, samples.length - 1);
+    state.timelineIndex = idx;
+    const s = samples[idx];
+    const color = Trust.colorFor(s.level);
+    $("timeline-scrub").max = String(samples.length - 1);
+    $("timeline-scrub").value = String(idx);
+    $("timeline-time").textContent = new Date(s.at).toLocaleTimeString();
+    $("timeline-score").textContent = String(s.score);
+    $("timeline-score").style.color = color;
+    $("timeline-level").textContent = s.gnssSuspicious
+      ? "GPS suspicious"
+      : s.level === "reliable"
+        ? "Reliable"
+        : s.level === "caution"
+          ? "Caution"
+          : "Unreliable";
+    $("timeline-level").style.color = color;
+    $("timeline-broken").textContent = s.broken?.length
+      ? `Broke: ${s.broken.join(", ")}`
+      : "All witnesses agreeing";
+    $("timeline-coords").textContent =
+      s.lat != null ? `${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}` : "—";
+    $("timeline-count").textContent = `${idx + 1} / ${samples.length}`;
+
+    // Sparkline
+    const canvas = $("timeline-spark");
+    if (canvas && canvas.getContext) {
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = "#cfd8dc";
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.25);
+      ctx.lineTo(w, h * 0.25);
+      ctx.moveTo(0, h * 0.45);
+      ctx.lineTo(w, h * 0.45);
+      ctx.stroke();
+      ctx.beginPath();
+      samples.forEach((sample, i) => {
+        const x = (i / Math.max(samples.length - 1, 1)) * (w - 4) + 2;
+        const y = h - 4 - (sample.score / 100) * (h - 8);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = "#0A1628";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const px = (idx / Math.max(samples.length - 1, 1)) * (w - 4) + 2;
+      const py = h - 4 - (s.score / 100) * (h - 8);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function renderVerify() {
@@ -340,8 +483,8 @@ const App = (() => {
       );
     }
     const hint = packLoaded()
-      ? ""
-      : `<article class="card"><h3>Using San Francisco landmarks</h3><p>Cache a region under Offline for local witnesses. You can still confirm a landmark now.</p>
+      ? `<article class="card"><h3>Lock to Real World</h3><p>Confirm a landmark to freeze a verified anchor — keep navigating when GPS drops or lies.</p></article>`
+      : `<article class="card"><h3>Lock to Real World</h3><p>Using San Francisco landmarks. Cache a region under Offline for local witnesses.</p>
          <button class="btn btn-primary" id="verify-open-packs" type="button" style="margin-top:10px">Open Offline</button></article>`;
     $("landmark-list").innerHTML =
       hint +
@@ -350,15 +493,15 @@ const App = (() => {
           const dist = gps
             ? Math.round(Trust.haversine(gps.lat, gps.lng, lm.lat, lm.lng))
             : null;
-          const on = state.landmark?.name === lm.name;
+          const on = state.lock?.name === lm.name;
           return `<article class="card">
               <div class="row-between">
                 <div>
                   <h3>${lm.name}</h3>
                   <p>${dist != null ? `${dist} m away` : "Distance needs a GPS fix"}</p>
                 </div>
-                <button class="btn ${on ? "btn-primary" : "btn-outline"}" data-confirm="${lm.name}">
-                  ${on ? "Verified" : "I see this"}
+                <button class="btn ${on ? "btn-primary" : "btn-outline"}" data-lock="${lm.name}" data-lat="${lm.lat}" data-lng="${lm.lng}">
+                  ${on ? "Locked" : "Lock to Real World"}
                 </button>
               </div>
             </article>`;
@@ -370,7 +513,7 @@ const App = (() => {
   function renderSettings() {
     $("toggle-outdoor").classList.toggle("on", state.outdoor);
     $("toggle-metric").classList.toggle("on", state.metric);
-    $("settings-version").textContent = "WHAMI PWA v2.0.0";
+    $("settings-version").textContent = "WHAMI PWA v2.1.0";
     $("settings-pack").textContent = packLoaded()
       ? `${activePack().name} cached in this browser`
       : "No region pack cached";
@@ -380,12 +523,17 @@ const App = (() => {
 
   function render() {
     renderStatus();
-    renderTrust();
+    if (state.route === "map") renderTrust();
+    else {
+      const t = fused();
+      renderSpoofAndLock(t);
+    }
     if (state.route === "sensors") renderSensors();
     if (state.route === "packs") renderPacks();
     if (state.route === "activity") renderActivity();
     if (state.route === "verify") renderVerify();
     if (state.route === "settings") renderSettings();
+    if (state.route === "timeline") renderTimeline();
   }
 
   async function startTracking() {
@@ -394,6 +542,7 @@ const App = (() => {
       await Sensors.unlockIOS();
       state.locError = null;
       state.tracking = true;
+      state.spoofDismissed = false;
       Sensors.start({
         onGps: (g) => {
           if (g.error) {
@@ -401,15 +550,25 @@ const App = (() => {
             render();
             return;
           }
+          const prev = state.gps;
           state.gps = g;
           state.sky = Sensors.skyFromGps(g);
           MapView.updateUser(g.lng, g.lat, g.accuracy);
+          const t = fused();
+          if (t.gnssSuspicious && (!prev || Trust.haversine(prev.lat, prev.lng, g.lat, g.lng) > 100)) {
+            Storage.addEvent({
+              severity: t.alertSeverity === "critical" ? "critical" : "warning",
+              title: "GPS jump / spoof alert",
+              body: t.alertMessage || "GPS suspicious — don't trust this pin.",
+            });
+            state.spoofDismissed = false;
+          }
           persist();
           render();
         },
         onMagnetic: (m) => {
           state.magnetic = m;
-          renderTrust();
+          if (state.route === "map") renderTrust();
         },
         onImu: (i) => {
           state.imu = i;
@@ -437,6 +596,33 @@ const App = (() => {
     render();
   }
 
+  function lockToRealWorld(name, lat, lng) {
+    state.lock = { name, lat: Number(lat), lng: Number(lng) };
+    state.landmark = { name, confidence: 91, radius: 25, lat: Number(lat), lng: Number(lng) };
+    state.spoofDismissed = false;
+    state.lastTrusted = { lat: Number(lat), lng: Number(lng), at: Date.now() };
+    persist();
+    MapView.updateLock(Number(lng), Number(lat), name);
+    Storage.addEvent({
+      severity: "info",
+      title: "Locked to Real World",
+      body: `${name} is now a verified anchor — navigate even if GPS drops.`,
+    });
+    render();
+  }
+
+  function clearLock() {
+    state.lock = null;
+    persist();
+    MapView.updateLock(null, null);
+    Storage.addEvent({
+      severity: "info",
+      title: "Real World lock cleared",
+      body: "Landmark anchor removed.",
+    });
+    render();
+  }
+
   async function cachePack(id) {
     const pack = Trust.packFor(id);
     if (!pack) return;
@@ -445,7 +631,7 @@ const App = (() => {
     renderPacks();
     try {
       if ("caches" in window) {
-        const cache = await caches.open("whami-tiles-v1");
+        const cache = await caches.open("whami-tiles-v2");
         const [south, west, north, east] = pack.bounds;
         const z = id === "usa_san_francisco" ? 12 : 8;
         const urls = tileUrls(west, south, east, north, z).slice(0, 80);
@@ -474,14 +660,14 @@ const App = (() => {
 
   function tileUrls(west, south, east, north, z) {
     const urls = [];
-    const n = 2 ** z;
     const x0 = lon2tile(west, z);
     const x1 = lon2tile(east, z);
     const y0 = lat2tile(north, z);
     const y1 = lat2tile(south, z);
     for (let x = x0; x <= x1; x++) {
       for (let y = y0; y <= y1; y++) {
-        urls.push(`https://a.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`);
+        const host = ["a", "b", "c"][(x + y) % 3];
+        urls.push(`https://${host}.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`);
       }
     }
     return urls;
@@ -551,6 +737,7 @@ const App = (() => {
     });
     $("menu-btn").onclick = () => go("settings");
     $("back-settings").onclick = () => go("map");
+    $("back-timeline")?.addEventListener("click", () => go("map"));
     $("track-pill").onclick = () => (state.tracking ? stopTracking() : startTracking());
     $("recenter-btn").onclick = () => {
       if (state.gps) MapView.recenter(state.gps.lng, state.gps.lat);
@@ -559,11 +746,28 @@ const App = (() => {
       state.pitch = !state.pitch;
       MapView.setPitch(state.pitch);
     };
+    $("replay-btn")?.addEventListener("click", () => go("timeline"));
     $("sources-toggle").onclick = () => {
       state.detailsOpen = !state.detailsOpen;
       renderTrust();
     };
     $("verify-cta").onclick = () => go("verify");
+    $("spoof-verify")?.addEventListener("click", () => go("verify"));
+    $("spoof-dismiss")?.addEventListener("click", () => {
+      state.spoofDismissed = true;
+      persist();
+      render();
+    });
+    $("lock-unlock")?.addEventListener("click", clearLock);
+    $("timeline-scrub")?.addEventListener("input", (e) => {
+      state.timelineIndex = Number(e.target.value);
+      renderTimeline();
+    });
+    $("timeline-clear")?.addEventListener("click", () => {
+      Storage.clearTimeline();
+      state.timelineIndex = 0;
+      renderTimeline();
+    });
 
     $("sheet").addEventListener("pointerdown", (e) => {
       if (window.matchMedia("(min-width: 900px)").matches) return;
@@ -643,15 +847,9 @@ const App = (() => {
       else stopCamera();
     };
     $("landmark-list").onclick = (e) => {
-      const btn = e.target.closest("[data-confirm]");
+      const btn = e.target.closest("[data-lock]");
       if (!btn) return;
-      state.landmark = { name: btn.dataset.confirm, confidence: 91, radius: 25 };
-      Storage.addEvent({
-        severity: "info",
-        title: "Landmark verified",
-        body: `${btn.dataset.confirm} added as a position witness.`,
-      });
-      render();
+      lockToRealWorld(btn.dataset.lock, btn.dataset.lat, btn.dataset.lng);
     };
 
     $("toggle-outdoor").onclick = () => {
@@ -710,6 +908,7 @@ const App = (() => {
         go("map");
         MapView.init();
         if (state.lastFix) MapView.updateUser(state.lastFix.lng, state.lastFix.lat, 40);
+        if (state.lock) MapView.updateLock(state.lock.lng, state.lock.lat, state.lock.name);
       }
     }, 900);
 

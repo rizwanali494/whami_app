@@ -103,28 +103,79 @@ const Trust = (() => {
 
   function fuse(state) {
     const opinions = [];
+    const broken = [];
     const gps = state.gps;
     const mag = state.magnetic;
     const imu = state.imu;
     const sky = state.sky;
     const landmark = state.landmark;
+    const lock = state.lock;
+    const lastTrusted = state.lastTrusted;
     const pack = packFor(state.activePackId);
     const hasPack = Boolean(pack && state.packs[pack.id]?.status === "downloaded");
 
+    let gnssSuspicious = false;
+    let alertMessage = "";
+    let alertSeverity = "none";
+
     if (gps) {
       const acc = gps.accuracy || 50;
-      const conf = Math.max(20, Math.min(98, Math.round(100 - acc / 2.2)));
+      let conf = Math.max(20, Math.min(98, Math.round(100 - acc / 2.2)));
+      let status = acc > 80 ? "unstable" : "active";
+      let description = acc > 80 ? "Weak GNSS fix" : "Live GPS fix";
+
+      if (lastTrusted?.lat != null && lastTrusted?.lng != null) {
+        const jump = haversine(lastTrusted.lat, lastTrusted.lng, gps.lat, gps.lng);
+        const speed = gps.speed != null ? gps.speed : 0;
+        if (jump > 500 && speed < 30) {
+          status = "unstable";
+          conf = Math.min(conf, 28);
+          description = `GPS jumped ${Math.round(jump)} m — spoofing suspected.`;
+          alertMessage =
+            "GPS suspicious — don't trust this pin. Jump without matching speed.";
+          alertSeverity = jump > 1000 ? "critical" : "warning";
+          gnssSuspicious = true;
+          broken.push("GPS");
+        }
+      }
+
+      if (lock?.lat != null && lock?.lng != null) {
+        const fromLock = haversine(lock.lat, lock.lng, gps.lat, gps.lng);
+        if (fromLock > 250) {
+          gnssSuspicious = true;
+          status = "unstable";
+          conf = Math.min(conf, 30);
+          alertMessage = `GPS suspicious — don't trust this pin. GPS is ${Math.round(fromLock)} m from locked landmark.`;
+          alertSeverity = fromLock > 500 ? "critical" : "warning";
+          if (!broken.includes("GPS")) broken.push("GPS");
+        }
+      }
+
       opinions.push({
         sourceType: "gps",
         name: "GPS",
-        status: acc > 80 ? "unstable" : "active",
+        status,
         confidence: conf,
         uncertaintyRadius: acc,
-        description: acc > 80 ? "Weak GNSS fix" : "Live GPS fix",
+        description,
+        lat: gps.lat,
+        lng: gps.lng,
       });
     }
 
-    if (landmark) {
+    if (lock?.lat != null && lock?.lng != null) {
+      const anchorActive = !gps || gnssSuspicious;
+      opinions.push({
+        sourceType: "landmark",
+        name: "Landmark",
+        status: "active",
+        confidence: anchorActive ? 90 : 78,
+        uncertaintyRadius: 40,
+        description: `Locked to real world: ${lock.name}`,
+        lat: lock.lat,
+        lng: lock.lng,
+      });
+    } else if (landmark) {
       opinions.push({
         sourceType: "landmark",
         name: "Landmark",
@@ -132,19 +183,23 @@ const Trust = (() => {
         confidence: landmark.confidence,
         uncertaintyRadius: landmark.radius,
         description: landmark.name,
+        lat: landmark.lat,
+        lng: landmark.lng,
       });
     }
 
     if (mag && mag.heading != null) {
       const strength = mag.absolute ? 88 : 62;
+      const unstable = !mag.absolute;
       opinions.push({
         sourceType: "magnetic",
         name: "Magnetic",
-        status: mag.absolute ? "active" : "unstable",
+        status: unstable ? "unstable" : "active",
         confidence: strength,
         uncertaintyRadius: mag.absolute ? 40 : 90,
         description: mag.absolute ? "Compass heading locked" : "Relative heading only",
       });
+      if (unstable) broken.push("Magnetic");
     }
 
     if (imu && imu.moving != null) {
@@ -178,6 +233,26 @@ const Trust = (() => {
       });
     }
 
+    // Cross-source disagreement vs GPS
+    if (gps) {
+      let maxDisc = 0;
+      for (const o of opinions) {
+        if (o.sourceType === "gps" || o.lat == null || o.lng == null) continue;
+        if (o.status === "unstable") continue;
+        const d = haversine(gps.lat, gps.lng, o.lat, o.lng);
+        if (d > maxDisc) maxDisc = d;
+        if (d > 500) {
+          if (!broken.includes(o.name)) broken.push(o.name);
+        }
+      }
+      if (maxDisc > 500) {
+        gnssSuspicious = true;
+        alertMessage = `GPS suspicious — don't trust this pin. GPS differs from witnesses by ${Math.round(maxDisc)} m.`;
+        alertSeverity = "critical";
+        if (!broken.includes("GPS")) broken.push("GPS");
+      }
+    }
+
     const active = opinions.filter((o) => o.status !== "unavailable");
     const agreeing = active.filter((o) => o.status !== "unstable" && o.confidence >= 55);
     let score = 0;
@@ -194,6 +269,7 @@ const Trust = (() => {
       if (hasPack) score = Math.min(100, score + 4);
     }
 
+    if (gnssSuspicious) score = Math.min(score, 35);
     if (!state.tracking) score = Math.min(score, 40);
 
     const level = levelFor(score, state.tracking);
@@ -207,21 +283,33 @@ const Trust = (() => {
           ? `±${(uncertainty / 1000).toFixed(1)} km`
           : `±${Math.round(uncertainty)} m`;
 
+    if (gnssSuspicious && !alertMessage) {
+      alertMessage = "GPS suspicious — don't trust this pin.";
+    }
+
     return {
       score,
       level,
       color: colorFor(level),
-      headline: labelFor(level),
-      subtitle: state.tracking
-        ? `${agreeing.length} of ${Math.max(opinions.length, 5)} sources agree · ${radiusLabel}`
-        : "Start tracking to verify your position",
-      explanation: explanation(level, score),
+      headline: gnssSuspicious ? "GPS suspicious" : labelFor(level),
+      subtitle: gnssSuspicious
+        ? "Don't trust this pin"
+        : state.tracking
+          ? `${agreeing.length} of ${Math.max(opinions.length, 5)} sources agree · ${radiusLabel}`
+          : "Start tracking to verify your position",
+      explanation: gnssSuspicious
+        ? alertMessage
+        : explanation(level, score),
       opinions,
       agreeing: agreeing.length,
       total: Math.max(opinions.length, 5),
       uncertainty,
+      gnssSuspicious,
+      alertMessage,
+      alertSeverity,
+      broken: [...new Set(broken)],
     };
   }
 
-  return { CATALOG, haversine, fuse, packFor, inBounds, colorFor };
+  return { CATALOG, haversine, fuse, packFor, inBounds, colorFor, levelFor };
 })();

@@ -114,6 +114,6 @@ void main() {
     expect(fused.longitude, closeTo(-122.3937, 0.0001));
     final landmark = fused.opinions.firstWhere((o) => o.sourceType == 'landmark');
     expect(landmark.status, 'active');
-    expect(landmark.description, contains('Visual anchor'));
+    expect(landmark.description, contains('Locked to real world'));
   });
 }

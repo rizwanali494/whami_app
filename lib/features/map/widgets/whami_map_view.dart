@@ -101,13 +101,13 @@ class _WhamiMapViewState extends State<WhamiMapView>
   }
 
   Map<String, dynamic> _buildStyleJson() {
-    final hasPack = widget.repository.activePackId.isNotEmpty;
+    // Always embed online streets so the map never starts blank — with or
+    // without Start Tracking, and with or without an offline pack.
+    // Pack vector layers are added on top in setupBaseMapLayers.
     return _mapEngine.tile.generateStyle(
       glyphsUrl: widget.repository.glyphServer.baseUrl,
-      includeRasterBasemap: !hasPack,
-      rasterCacheUrl: hasPack
-          ? null
-          : widget.repository.rasterTileCacheService.baseUrl,
+      includeRasterBasemap: true,
+      rasterCacheUrl: widget.repository.rasterTileCacheService.baseUrl,
     );
   }
 
@@ -182,7 +182,8 @@ class _WhamiMapViewState extends State<WhamiMapView>
         isOffline: isOffline,
         localMBTilesUrl: localMBTilesUrl,
         rasterCacheUrl: widget.repository.rasterTileCacheService.baseUrl,
-        rasterAlreadyInStyle: activePack == null,
+        // Online raster is always baked into the style JSON now.
+        rasterAlreadyInStyle: true,
       );
     } catch (e) {
       debugPrint('Error loading base map layers: $e');

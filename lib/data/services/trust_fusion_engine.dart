@@ -16,6 +16,13 @@ class FusedPosition {
   final List<PositionOpinion> opinions;
   final String alertMessage;
   final String alertSeverity; // none, info, warning, critical
+  final double? wmmResidualUt;
+  final double? baroGpsAltDeltaM;
+  final int magneticAgreement;
+  final int baroConsistency;
+  final int celestialAgreement;
+  final bool gnssSuspicious;
+  final List<String> sourceHierarchy;
 
   const FusedPosition({
     required this.latitude,
@@ -25,6 +32,13 @@ class FusedPosition {
     required this.opinions,
     required this.alertMessage,
     required this.alertSeverity,
+    this.wmmResidualUt,
+    this.baroGpsAltDeltaM,
+    this.magneticAgreement = 0,
+    this.baroConsistency = 0,
+    this.celestialAgreement = 0,
+    this.gnssSuspicious = false,
+    this.sourceHierarchy = const [],
   });
 
   @override
@@ -52,10 +66,20 @@ class TrustFusionEngine {
     double? landmarkAnchorLat,
     double? landmarkAnchorLng,
     String? landmarkAnchorName,
+    /// Optional WMM residual (µT) and agreement score from WmmService.
+    double? wmmResidualUt,
+    int? wmmAgreementScore,
+    String? wmmStatus,
+    String? wmmDescription,
   }) {
     final opinions = <PositionOpinion>[];
     String alertMessage = 'Positions aligned. System nominal.';
     String alertSeverity = 'none';
+    double? baroGpsAltDeltaM;
+    var gnssSuspicious = false;
+    var magneticAgreement = 0;
+    var baroConsistency = 0;
+    var celestialAgreement = 0;
 
     final hasValidGps = gps != null;
     final hasAnchor =
@@ -69,7 +93,7 @@ class TrustFusionEngine {
       String status = 'active';
       String desc = 'Live GPS fix';
 
-      // Detect anomalies (GPS jumps)
+      // Detect anomalies (GPS jumps vs last trusted fix)
       if (lastTrustedLat != null && lastTrustedLng != null) {
         final distFromLastTrusted = _haversine(
           lastTrustedLat,
@@ -77,13 +101,15 @@ class TrustFusionEngine {
           gps.latitude,
           gps.longitude,
         );
-        // If GPS jumped > 1000m and speed doesn't explain it, flag GPS anomaly
-        if (distFromLastTrusted > 1000 && gps.speed < 50) {
+        // Physically unlikely jump: large move without matching speed.
+        if (distFromLastTrusted > 500 && gps.speed < 30) {
           status = 'unstable';
-          desc = 'GPS coordinate jump detected! Potential spoofing.';
+          desc =
+              'GPS jumped ${distFromLastTrusted.toStringAsFixed(0)} m — spoofing suspected.';
           alertMessage =
-              'WARNING: Unexpected GPS jump detected. Cross-checking sensor indices.';
-          alertSeverity = 'warning';
+              'GPS suspicious — don\'t trust this pin. Jump ${distFromLastTrusted.toStringAsFixed(0)} m without matching speed.';
+          alertSeverity = distFromLastTrusted > 1000 ? 'critical' : 'warning';
+          gnssSuspicious = true;
         }
       }
 
@@ -110,7 +136,47 @@ class TrustFusionEngine {
     }
 
     // ── 2. Landmark Matching / Visual Anchor Opinion ─────────────────────────
-    if (hasOfflineData && landmarkMatch != null && gps != null) {
+    // Visual "Lock to Real World" pins an independent lat/lng so a lying GPS
+    // pin can be caught by cross-source disagreement.
+    if (hasAnchor) {
+      final anchorActive = gps == null || gnssSuspicious;
+      opinions.add(
+        PositionOpinion.fromLandmark(
+          latitude: landmarkAnchorLat!,
+          longitude: landmarkAnchorLng!,
+          confidence: anchorActive ? 90 : 78,
+          uncertaintyRadius: 40.0,
+          status: 'active',
+          description:
+              'Locked to real world: ${landmarkAnchorName ?? "landmark"}',
+        ),
+      );
+      if (gps != null) {
+        final dist = _haversine(
+          landmarkAnchorLat,
+          landmarkAnchorLng,
+          gps.latitude,
+          gps.longitude,
+        );
+        // Far from locked landmark while still "near" it in the UI → GPS lie.
+        if (dist > 250) {
+          gnssSuspicious = true;
+          alertMessage =
+              'GPS suspicious — don\'t trust this pin. GPS is ${dist.toStringAsFixed(0)} m from locked landmark.';
+          alertSeverity = dist > 500 ? 'critical' : 'warning';
+          // Downgrade the GPS opinion if still marked active.
+          final gpsIdx = opinions.indexWhere((o) => o.id == 'gps');
+          if (gpsIdx >= 0 && opinions[gpsIdx].status == 'active') {
+            opinions[gpsIdx] = opinions[gpsIdx].copyWith(
+              status: 'unstable',
+              description:
+                  'GPS ${dist.toStringAsFixed(0)} m from locked real-world anchor',
+              confidence: (opinions[gpsIdx].confidence * 0.4).round(),
+            );
+          }
+        }
+      }
+    } else if (hasOfflineData && landmarkMatch != null && gps != null) {
       final confidenceScore = (landmarkMatch.confidence * 100).toInt();
       final double estimatedUncertainty = landmarkMatch.distance.clamp(
         10.0,
@@ -129,18 +195,6 @@ class TrustFusionEngine {
           description: 'Nearest matched landmark: ${landmarkMatch.name}',
         ),
       );
-    } else if (hasAnchor && gps == null) {
-      opinions.add(
-        PositionOpinion.fromLandmark(
-          latitude: landmarkAnchorLat,
-          longitude: landmarkAnchorLng,
-          confidence: 88,
-          uncertaintyRadius: 40.0,
-          status: 'active',
-          description:
-              'Visual anchor: ${landmarkAnchorName ?? "landmark"} (no GPS)',
-        ),
-      );
     } else {
       opinions.add(
         PositionOpinion.unavailable(
@@ -156,8 +210,30 @@ class TrustFusionEngine {
       );
     }
 
-    // ── 3. Magnetic Grid Opinion ─────────────────────────────────────────────
-    if (hasOfflineData &&
+    // ── 3. Magnetic Grid / WMM Opinion ───────────────────────────────────────
+    if (wmmResidualUt != null &&
+        wmmAgreementScore != null &&
+        magnetometer != null &&
+        gps != null) {
+      magneticAgreement = wmmAgreementScore;
+      final status = wmmStatus ?? 'active';
+      if (status == 'unstable') {
+        alertMessage =
+            wmmDescription ?? 'Magnetic model disagreement detected.';
+        if (alertSeverity == 'none') alertSeverity = 'warning';
+      }
+      opinions.add(
+        PositionOpinion.fromMagnetic(
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          confidence: wmmAgreementScore,
+          uncertaintyRadius: status == 'unstable' ? 500.0 : 180.0,
+          status: status == 'unstable' ? 'unstable' : 'active',
+          description: wmmDescription ??
+              'WMM residual ${wmmResidualUt.toStringAsFixed(1)} µT',
+        ),
+      );
+    } else if (hasOfflineData &&
         magneticMatch != null &&
         magnetometer != null &&
         gps != null) {
@@ -169,6 +245,7 @@ class TrustFusionEngine {
       final confidenceScore = isInterfered
           ? 20
           : (magneticMatch.stability * 95).toInt();
+      magneticAgreement = confidenceScore;
 
       String desc =
           'Field deviation: ${magneticMatch.deviation.toStringAsFixed(1)} µT';
@@ -206,6 +283,7 @@ class TrustFusionEngine {
       }
 
       if (hasPositionCoords && gps != null) {
+        magneticAgreement = rawConfidence;
         opinions.add(
           PositionOpinion.fromMagnetic(
             latitude: gps.latitude,
@@ -296,6 +374,7 @@ class TrustFusionEngine {
 
     // ── 5. Celestial Alignment Opinion ───────────────────────────────────────
     if (sky != null && gps != null) {
+      celestialAgreement = sky.confidence;
       // Coarse offline verification at the GPS fix — no invented jitter.
       opinions.add(
         PositionOpinion.fromSky(
@@ -317,6 +396,60 @@ class TrustFusionEngine {
           sourceType: 'sextant',
           colorName: 'green',
           description: 'Celestial calculations inactive',
+        ),
+      );
+    }
+
+    // ── 5b. Barometric vertical consistency ──────────────────────────────────
+    if (barometer != null && gps != null) {
+      final delta = (barometer.estimatedAltitude - gps.altitude).abs();
+      baroGpsAltDeltaM = delta;
+      // Vertical witness only — pins to GPS lat/lng; does not invent horizontal fix.
+      late final int conf;
+      late final String status;
+      late final String desc;
+      if (delta <= 40) {
+        conf = 85;
+        status = 'active';
+        desc =
+            'Baro/GPS alt agree (Δ ${delta.toStringAsFixed(0)} m)';
+      } else if (delta <= 120) {
+        conf = 55;
+        status = 'active';
+        desc =
+            'Baro/GPS soft mismatch (Δ ${delta.toStringAsFixed(0)} m)';
+      } else {
+        conf = 20;
+        status = 'unstable';
+        desc =
+            'Baro/GPS altitude conflict (Δ ${delta.toStringAsFixed(0)} m)';
+        if (alertSeverity == 'none' || alertSeverity == 'info') {
+          alertMessage = desc;
+          alertSeverity = 'warning';
+        }
+      }
+      baroConsistency = conf;
+      opinions.add(
+        PositionOpinion.fromBarometer(
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          confidence: conf,
+          uncertaintyRadius: 250.0 + delta,
+          status: status,
+          description: desc,
+        ),
+      );
+    } else {
+      opinions.add(
+        PositionOpinion.unavailable(
+          id: 'baro',
+          name: 'Barometric',
+          shortCode: 'B',
+          sourceType: 'baro',
+          colorName: 'teal',
+          description: barometer == null
+              ? 'No barometer reading'
+              : 'Baro needs GPS altitude for consistency check',
         ),
       );
     }
@@ -404,13 +537,24 @@ class TrustFusionEngine {
         // If GPS is > 500m away from other active sources, trigger critical spoofing alert!
         if (maxDiscrepancy > 500.0) {
           alertMessage =
-              'CRITICAL: Position discrepancy! GPS differs from offline landmarks by ${maxDiscrepancy.toStringAsFixed(0)}m.';
+              'GPS suspicious — don\'t trust this pin. GPS differs from witnesses by ${maxDiscrepancy.toStringAsFixed(0)} m.';
           alertSeverity = 'critical';
+          gnssSuspicious = true;
           // Deprecate trust score
           compositeConfidence = (compositeConfidence * 0.4).toInt();
           compositeUncertainty = maxDiscrepancy;
         }
       }
+
+      final hierarchy = <String>[];
+      for (final op in activeOpinions) {
+        hierarchy.add('${op.shortCode}:${op.confidence}');
+      }
+      hierarchy.sort((a, b) {
+        final ca = int.tryParse(a.split(':').last) ?? 0;
+        final cb = int.tryParse(b.split(':').last) ?? 0;
+        return cb.compareTo(ca);
+      });
 
       return FusedPosition(
         latitude: fusedLat,
@@ -420,20 +564,41 @@ class TrustFusionEngine {
         opinions: opinions,
         alertMessage: alertMessage,
         alertSeverity: alertSeverity,
+        wmmResidualUt: wmmResidualUt,
+        baroGpsAltDeltaM: baroGpsAltDeltaM,
+        magneticAgreement: magneticAgreement,
+        baroConsistency: baroConsistency,
+        celestialAgreement: celestialAgreement,
+        gnssSuspicious: gnssSuspicious,
+        sourceHierarchy: hierarchy,
       );
     } else {
       // No active sources - absolute fallback
       final fallbackLat = gps?.latitude ?? lastTrustedLat ?? 37.8087;
       final fallbackLng = gps?.longitude ?? lastTrustedLng ?? -122.4098;
 
+      // Prefer last trusted fix when GPS itself is the suspicious source.
+      final useTrusted = gnssSuspicious &&
+          lastTrustedLat != null &&
+          lastTrustedLng != null;
+
       return FusedPosition(
-        latitude: fallbackLat,
-        longitude: fallbackLng,
-        confidence: 0,
-        uncertaintyRadius: 1000.0,
+        latitude: useTrusted ? lastTrustedLat : fallbackLat,
+        longitude: useTrusted ? lastTrustedLng : fallbackLng,
+        confidence: gnssSuspicious ? 25 : 0,
+        uncertaintyRadius: gnssSuspicious ? 1000.0 : 1000.0,
         opinions: opinions,
-        alertMessage: 'CRITICAL: No active positioning sources available!',
-        alertSeverity: 'critical',
+        alertMessage: gnssSuspicious
+            ? alertMessage
+            : 'CRITICAL: No active positioning sources available!',
+        alertSeverity: gnssSuspicious ? alertSeverity : 'critical',
+        wmmResidualUt: wmmResidualUt,
+        baroGpsAltDeltaM: baroGpsAltDeltaM,
+        magneticAgreement: magneticAgreement,
+        baroConsistency: baroConsistency,
+        celestialAgreement: celestialAgreement,
+        gnssSuspicious: gnssSuspicious,
+        sourceHierarchy: const [],
       );
     }
   }
