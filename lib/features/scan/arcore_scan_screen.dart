@@ -26,6 +26,7 @@ class _ArScanScreenState extends State<ArScanScreen>
   String _poseQuality = 'Waiting';
   int _featurePoints = 0;
   int _visualMatch = 0;
+  bool _sealAcquired = false;
 
   // Animation
   late AnimationController _gridAnim;
@@ -130,6 +131,7 @@ class _ArScanScreenState extends State<ArScanScreen>
       _featurePoints = featurePoints;
       _poseQuality = poseQuality;
       _visualMatch = visualMatch;
+      _sealAcquired = visualMatch >= 80;
     });
   }
 
@@ -139,6 +141,7 @@ class _ArScanScreenState extends State<ArScanScreen>
       _poseQuality = 'Waiting';
       _featurePoints = 0;
       _visualMatch = 0;
+      _sealAcquired = false;
     });
   }
 
@@ -148,16 +151,23 @@ class _ArScanScreenState extends State<ArScanScreen>
       poseQuality: _poseQuality,
       visualMatch: _visualMatch,
     );
+    setState(() => _sealAcquired = _visualMatch >= 80);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: AppColors.headerBg,
         content: Row(
           children: [
-            const Icon(Icons.check_circle, color: AppColors.trustHigh, size: 16),
+            Icon(
+              _sealAcquired ? Icons.verified : Icons.check_circle,
+              color: AppColors.trustHigh,
+              size: 16,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'AR visual confirmation sent — pose: $_poseQuality, match: $_visualMatch%',
+                _sealAcquired
+                    ? 'Real-world lock seal acquired · match $_visualMatch%'
+                    : 'AR visual confirmation sent — pose: $_poseQuality, match: $_visualMatch%',
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
@@ -257,6 +267,64 @@ class _ArScanScreenState extends State<ArScanScreen>
                       size: 24,
                     ),
                   ),
+
+                  if (_sealAcquired)
+                    Positioned(
+                      bottom: 24,
+                      left: 24,
+                      right: 24,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1B5E20), Color(0xFF0A1628)],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.trustHigh.withValues(alpha: 0.7),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.trustHigh.withValues(alpha: 0.35),
+                              blurRadius: 18,
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.verified, color: AppColors.trustHigh, size: 28),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'REAL-WORLD LOCK',
+                                    style: TextStyle(
+                                      color: AppColors.trustHigh,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Prove You’re Here · seal acquired',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                   // Mode badge
                   Positioned(

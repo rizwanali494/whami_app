@@ -16,8 +16,8 @@ class RasterTileCacheService {
   static const _maxCachedTiles = 4000;
   static const _evictThreshold = 4400; // 110% — avoid thrashing every insert
   static const _ttl = Duration(days: 7);
-  /// Bumped when CDN provider changes so watermark / stale tiles are dropped.
-  static const _dbVersion = 3;
+  /// Bumped when CDN provider set changes (styles / hybrid labels).
+  static const _dbVersion = 5;
 
   HttpServer? _server;
   Database? _db;
@@ -42,9 +42,9 @@ class RasterTileCacheService {
 
       _httpClient = HttpClient()
         ..userAgent = MapBasemapConfig.httpUserAgent
-        ..idleTimeout = const Duration(seconds: 30)
-        ..maxConnectionsPerHost = 6
-        ..connectionTimeout = const Duration(seconds: 8);
+        ..idleTimeout = const Duration(seconds: 60)
+        ..maxConnectionsPerHost = 4
+        ..connectionTimeout = const Duration(seconds: 20);
 
       _db = await openDatabase(
         '${dir.path}/raster_tile_cache.sqlite',
@@ -79,29 +79,39 @@ class RasterTileCacheService {
   Future<void> _createSchema(Database db) async {
     await db.execute(
       'CREATE TABLE tiles ('
+      'provider TEXT NOT NULL DEFAULT \'streets\', '
       'zoom_level INTEGER NOT NULL, '
       'tile_column INTEGER NOT NULL, '
       'tile_row INTEGER NOT NULL, '
       'tile_data BLOB NOT NULL, '
       'accessed_at INTEGER NOT NULL, '
       'fetched_at INTEGER NOT NULL, '
-      'PRIMARY KEY (zoom_level, tile_column, tile_row))',
+      'PRIMARY KEY (provider, zoom_level, tile_column, tile_row))',
     );
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
     final response = request.response;
-    final parts = request.uri.path.split('/');
+    final parts = request.uri.path.split('/').where((p) => p.isNotEmpty).toList();
 
-    if (parts.length < 4 || _db == null) {
+    // /{z}/{x}/{y}.png  or  /{provider}/{z}/{x}/{y}.png
+    const known = {'streets', 'sat', 'dark', 'light', 'topo', 'labels'};
+    String provider = 'streets';
+    List<String> coords = parts;
+    if (parts.isNotEmpty && known.contains(parts.first)) {
+      provider = parts.first;
+      coords = parts.skip(1).toList();
+    }
+
+    if (coords.length < 3 || _db == null) {
       response.statusCode = HttpStatus.notFound;
       await response.close();
       return;
     }
 
-    final z = int.tryParse(parts[1]);
-    final x = int.tryParse(parts[2]);
-    final y = int.tryParse(parts[3].split('.').first);
+    final z = int.tryParse(coords[0]);
+    final x = int.tryParse(coords[1]);
+    final y = int.tryParse(coords[2].split('.').first);
 
     if (z == null || x == null || y == null) {
       response.statusCode = HttpStatus.notFound;
@@ -109,7 +119,8 @@ class RasterTileCacheService {
       return;
     }
 
-    final tile = await _readTile(z, x, y) ?? await _fetchAndStore(z, x, y);
+    final tile = await _readTile(provider, z, x, y) ??
+        await _fetchAndStore(provider, z, x, y);
 
     if (tile == null) {
       response.statusCode = HttpStatus.notFound;
@@ -123,15 +134,15 @@ class RasterTileCacheService {
     await response.close();
   }
 
-  Future<List<int>?> _readTile(int z, int x, int y) async {
+  Future<List<int>?> _readTile(String provider, int z, int x, int y) async {
     final db = _db;
     if (db == null) return null;
 
     try {
       final rows = await db.rawQuery(
         'SELECT tile_data, fetched_at FROM tiles '
-        'WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?',
-        [z, x, y],
+        'WHERE provider = ? AND zoom_level = ? AND tile_column = ? AND tile_row = ?',
+        [provider, z, x, y],
       );
       if (rows.isEmpty) return null;
 
@@ -145,42 +156,62 @@ class RasterTileCacheService {
       unawaited(
         db.rawUpdate(
           'UPDATE tiles SET accessed_at = ? '
-          'WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?',
-          [DateTime.now().millisecondsSinceEpoch, z, x, y],
+          'WHERE provider = ? AND zoom_level = ? AND tile_column = ? AND tile_row = ?',
+          [DateTime.now().millisecondsSinceEpoch, provider, z, x, y],
         ),
       );
 
       return rows.first['tile_data'] as List<int>?;
     } catch (e) {
-      debugPrint('[RasterTileCacheService] Read failed for $z/$x/$y: $e');
+      debugPrint('[RasterTileCacheService] Read failed for $provider/$z/$x/$y: $e');
       return null;
     }
   }
 
-  Future<List<int>?> _fetchAndStore(int z, int x, int y) {
-    final key = '$z/$x/$y';
+  Future<List<int>?> _fetchAndStore(String provider, int z, int x, int y) {
+    final key = '$provider/$z/$x/$y';
     final existing = _inflight[key];
     if (existing != null) return existing;
 
-    final future = _doFetchAndStore(z, x, y).whenComplete(() {
+    final future = _doFetchAndStore(provider, z, x, y).whenComplete(() {
       _inflight.remove(key);
     });
     _inflight[key] = future;
     return future;
   }
 
-  Future<List<int>?> _doFetchAndStore(int z, int x, int y) async {
+  Future<List<int>?> _doFetchAndStore(
+    String provider,
+    int z,
+    int x,
+    int y,
+  ) async {
     final client = _httpClient;
     if (client == null) return null;
 
     final host = MapBasemapConfig
         .cdnHosts[_hostIndex++ % MapBasemapConfig.cdnHosts.length];
-    final url = Uri.parse(MapBasemapConfig.tileUrlForHost(host, z, x, y));
+    final Uri url;
+    switch (provider) {
+      case 'sat':
+        url = Uri.parse(MapBasemapConfig.satelliteTileUrl(z, x, y));
+      case 'labels':
+        url = Uri.parse(MapBasemapConfig.esriReferenceTileUrl(z, x, y));
+      case 'dark':
+        url = Uri.parse(MapBasemapConfig.cartoDarkTileUrl(host, z, x, y));
+      case 'light':
+        url = Uri.parse(MapBasemapConfig.cartoLightTileUrl(host, z, x, y));
+      case 'topo':
+        url = Uri.parse(MapBasemapConfig.openTopoTileUrl(host, z, x, y));
+      case 'streets':
+      default:
+        url = Uri.parse(MapBasemapConfig.tileUrlForHost(host, z, x, y));
+    }
 
     try {
       final req = await client.getUrl(url);
       req.headers.set(HttpHeaders.userAgentHeader, MapBasemapConfig.httpUserAgent);
-      final res = await req.close().timeout(const Duration(seconds: 8));
+      final res = await req.close().timeout(const Duration(seconds: 20));
       if (res.statusCode != 200) return null;
 
       final builder = BytesBuilder(copy: false);
@@ -190,21 +221,30 @@ class RasterTileCacheService {
       final bytes = builder.takeBytes();
       if (bytes.isEmpty) return null;
 
-      unawaited(_storeTile(z, x, y, bytes));
+      unawaited(_storeTile(provider, z, x, y, bytes));
       return bytes;
     } catch (e) {
-      debugPrint('[RasterTileCacheService] Fetch failed for $z/$x/$y: $e');
+      debugPrint(
+        '[RasterTileCacheService] Fetch failed for $provider/$z/$x/$y: $e',
+      );
       return null;
     }
   }
 
-  Future<void> _storeTile(int z, int x, int y, List<int> data) async {
+  Future<void> _storeTile(
+    String provider,
+    int z,
+    int x,
+    int y,
+    List<int> data,
+  ) async {
     final db = _db;
     if (db == null) return;
 
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       await db.insert('tiles', {
+        'provider': provider,
         'zoom_level': z,
         'tile_column': x,
         'tile_row': y,
@@ -215,7 +255,9 @@ class RasterTileCacheService {
 
       await _evictLeastRecentlyUsed(db);
     } catch (e) {
-      debugPrint('[RasterTileCacheService] Store failed for $z/$x/$y: $e');
+      debugPrint(
+        '[RasterTileCacheService] Store failed for $provider/$z/$x/$y: $e',
+      );
     }
   }
 

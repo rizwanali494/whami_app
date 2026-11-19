@@ -37,11 +37,13 @@ Geolocation only works on **localhost** or **HTTPS**.
 
 Trust bands match the native app: ≥75 reliable, 55–74 caution, &lt;55 unreliable.
 
-### Mind-changing features (v2.1)
+### Mind-changing features (v2.2)
 
-1. **GPS spoof / jump alarm** — red banner when GPS jumps or disagrees with a locked landmark  
-2. **Trust Timeline Replay** — scrub samples after a walk (Map → Replay, or Activity)  
-3. **Lock to Real World** — freeze a landmark anchor from Verify  
+1. **Ghost Pin** — faded GPS claim vs solid trusted pin + red lie line + distance  
+2. **GPS spoof / jump alarm** — red banner when GPS jumps or disagrees with a lock  
+3. **Trust Timeline Replay** — scrub samples after a walk (Map → Replay, or Activity)  
+4. **Evidence Pack** — download timeline JSON from Activity / Timeline  
+5. **Lock to Real World** + **Snap coastline / runway** (demo SF Bay / SFO)
 
 ## Limits vs native
 

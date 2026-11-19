@@ -1,0 +1,78 @@
+{
+  "type": "FeatureCollection",
+  "name": "demo_routes",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Hwy · Bayshore (demo)", "kind": "road" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4000, 37.6200],
+          [-122.3900, 37.6400],
+          [-122.3800, 37.6600],
+          [-122.3700, 37.6800]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Caltrain corridor (demo)", "kind": "rail" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.3950, 37.6150],
+          [-122.3850, 37.6450],
+          [-122.3750, 37.6750]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Canal · Bay edge (demo)", "kind": "canal" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4100, 37.6300],
+          [-122.4000, 37.6350],
+          [-122.3900, 37.6400]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Taxiway · SFO A (demo)", "kind": "taxiway" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.3700, 37.6200],
+          [-122.3650, 37.6220],
+          [-122.3600, 37.6240]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Trail · Headlands (demo)", "kind": "trail" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.5000, 37.8200],
+          [-122.4900, 37.8250],
+          [-122.4800, 37.8300]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "RWY · Tocumwal 09/27 (demo)", "kind": "runway" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [145.6000, -35.8125],
+          [145.6160, -35.8110]
+        ]
+      }
+    }
+  ]
+}

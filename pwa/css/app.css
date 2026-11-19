@@ -376,6 +376,50 @@ button:disabled { opacity: 0.5; cursor: default; }
   line-height: 1;
 }
 
+.crossfire-panel {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 72px);
+  left: 14px; right: 14px;
+  z-index: 9;
+  background: #0a1628;
+  color: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.spoof-banner:not(.hidden) ~ .crossfire-panel {
+  top: calc(env(safe-area-inset-top, 0px) + 200px);
+}
+.crossfire-panel .cf-top {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px;
+}
+.crossfire-panel .cf-top strong {
+  font-size: 12px; letter-spacing: 0.6px;
+}
+.crossfire-panel .cf-top button {
+  border: 0; background: transparent; color: #90a4ae; font-size: 18px;
+}
+.cf-headline { margin: 0 0 10px; font-size: 13px; font-weight: 700; }
+.cf-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cf-chip {
+  border: 1px solid var(--cf);
+  color: var(--cf);
+  background: color-mix(in srgb, var(--cf) 18%, transparent);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 900;
+  font-size: 12px;
+}
+.cf-chip.on { border-width: 2px; background: color-mix(in srgb, var(--cf) 35%, transparent); }
+.cf-why {
+  margin-top: 10px; padding: 10px; border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+}
+.cf-why strong { display: block; font-size: 13px; margin-bottom: 4px; }
+.cf-why p { margin: 0; font-size: 12px; opacity: 0.9; }
+.cf-hint { margin: 8px 0 0; font-size: 11px; color: #90a4ae; }
+
 .lock-dot .lock-core {
   display: block;
   width: 16px;

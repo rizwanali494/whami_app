@@ -1,0 +1,28 @@
+{
+  "type": "FeatureCollection",
+  "name": "sfo_runway_demo",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Runway · SFO 28L (demo)" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.3589, 37.6126],
+          [-122.3795, 37.6285]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Runway · SFO 28R (demo)" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.3562, 37.6158],
+          [-122.3768, 37.6316]
+        ]
+      }
+    }
+  ]
+}

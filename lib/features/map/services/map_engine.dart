@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import '../../../core/config/map_basemap_config.dart';
+import '../../../core/config/map_basemap_style.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/position_opinion.dart';
 
@@ -16,26 +19,40 @@ class TileEngine {
     String? glyphsUrl,
     bool includeRasterBasemap = true,
     String? rasterCacheUrl,
+    bool satellite = false,
+    MapBasemapStyle? basemapStyle,
   }) {
+    // ignore: deprecated_member_use_from_same_package
+    final style = basemapStyle ??
+        (satellite ? MapBasemapStyle.satellite : MapBasemapStyle.street);
     final sources = <String, dynamic>{};
     final layers = <Map<String, dynamic>>[
       {
         'id': 'background',
         'type': 'background',
-        'paint': {'background-color': '#F2EFE9'},
+        'paint': {
+          'background-color': MapBasemapConfig.backgroundColor(style),
+        },
       },
     ];
 
     if (includeRasterBasemap) {
-      final tiles = (rasterCacheUrl != null && rasterCacheUrl.isNotEmpty)
-          ? ['$rasterCacheUrl/{z}/{x}/{y}.png']
-          : MapBasemapConfig.tileUrls;
+      final provider = MapBasemapConfig.cacheProviderPath(style);
+      final List<String> tiles;
+      if (rasterCacheUrl != null && rasterCacheUrl.isNotEmpty) {
+        final path = provider == 'streets'
+            ? '$rasterCacheUrl/{z}/{x}/{y}.png'
+            : '$rasterCacheUrl/$provider/{z}/{x}/{y}.png';
+        tiles = [path];
+      } else {
+        tiles = MapBasemapConfig.directTileUrls(style);
+      }
       sources['open-tiles'] = {
         'type': 'raster',
         'tiles': tiles,
         'tileSize': MapBasemapConfig.tileSize,
         'maxzoom': MapBasemapConfig.sourceMaxZoom,
-        'attribution': MapBasemapConfig.attribution,
+        'attribution': MapBasemapConfig.attributionFor(style),
       };
       layers.add({
         'id': 'base-tiles',
@@ -44,19 +61,43 @@ class TileEngine {
         'minzoom': 0,
         'maxzoom': MapBasemapConfig.layerMaxZoom,
       });
+
+      // Hybrid: imagery + Esri place labels (second raster).
+      if (style == MapBasemapStyle.hybrid) {
+        final labelTiles = (rasterCacheUrl != null && rasterCacheUrl.isNotEmpty)
+            ? ['$rasterCacheUrl/labels/{z}/{x}/{y}.png']
+            : [
+                'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/'
+                    'World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+              ];
+        sources['label-tiles'] = {
+          'type': 'raster',
+          'tiles': labelTiles,
+          'tileSize': MapBasemapConfig.tileSize,
+          'maxzoom': MapBasemapConfig.sourceMaxZoom,
+        };
+        layers.add({
+          'id': 'label-tiles',
+          'type': 'raster',
+          'source': 'label-tiles',
+          'minzoom': 0,
+          'maxzoom': MapBasemapConfig.layerMaxZoom,
+          'paint': {'raster-opacity': 0.95},
+        });
+      }
     }
 
     return {
       'version': 8,
-      'name': MapBasemapConfig.styleName,
+      'name': 'WHAMI ${style.label}',
       'sources': sources,
       'layers': layers,
-      // Bundled Noto Sans glyphs served locally (see GlyphServer) — works
-      // identically online and offline, no external dependency. Required
-      // for any text-field symbol layer (road/place/POI labels) to render
-      // at all — MapLibre silently draws no text without a glyphs source.
-      if (glyphsUrl != null && glyphsUrl.isNotEmpty)
-        'glyphs': '$glyphsUrl/{fontstack}/{range}.pbf',
+      // Local GlyphServer when assets exist; otherwise public MapLibre fonts
+      // so opinion / crossfire labels still paint (bundled glyphs are often
+      // missing → local server 404s and text never appears).
+      'glyphs': (glyphsUrl != null && glyphsUrl.isNotEmpty)
+          ? '$glyphsUrl/{fontstack}/{range}.pbf'
+          : 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
     };
   }
 }
@@ -181,7 +222,11 @@ class LayerEngine {
     /// When true, the light OSM raster was already baked into the style JSON
     /// — skip clear/re-add for the no-pack path so streets stay visible.
     bool rasterAlreadyInStyle = false,
+    bool satellite = false,
+    MapBasemapStyle? basemapStyle,
   }) async {
+    final style = basemapStyle ??
+        (satellite ? MapBasemapStyle.satellite : MapBasemapStyle.street);
     final c = _controller;
     if (c == null) return;
 
@@ -785,14 +830,18 @@ class LayerEngine {
         ),
       );
     } else if (!rasterAlreadyInStyle) {
-      // No pack active — light OSM raster (only when not already in style JSON).
+      // No pack active — raster basemap (only when not already in style JSON).
       if (rasterCacheUrl != null && rasterCacheUrl.isNotEmpty) {
+        final provider = MapBasemapConfig.cacheProviderPath(style);
+        final tiles = provider == 'streets'
+            ? ['$rasterCacheUrl/{z}/{x}/{y}.png']
+            : ['$rasterCacheUrl/$provider/{z}/{x}/{y}.png'];
         await _safeAdd(
           'open-tiles source',
           () => c.addSource(
             'open-tiles',
             RasterSourceProperties(
-              tiles: ['$rasterCacheUrl/{z}/{x}/{y}.png'],
+              tiles: tiles,
               tileSize: MapBasemapConfig.tileSize,
               maxzoom: MapBasemapConfig.sourceMaxZoom,
             ),
@@ -958,6 +1007,35 @@ class CameraEngine {
     if (c == null) return;
     c.animateCamera(CameraUpdate.newLatLng(LatLng(lat, lng)));
   }
+
+  /// Fit both ghost and trusted pins in view (one-shot spoof reveal).
+  void fitPair(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2, {
+    double padding = 64,
+  }) {
+    final c = _controller;
+    if (c == null) return;
+    final sw = LatLng(
+      lat1 < lat2 ? lat1 : lat2,
+      lng1 < lng2 ? lng1 : lng2,
+    );
+    final ne = LatLng(
+      lat1 > lat2 ? lat1 : lat2,
+      lng1 > lng2 ? lng1 : lng2,
+    );
+    c.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(southwest: sw, northeast: ne),
+        left: padding,
+        top: padding,
+        right: padding,
+        bottom: padding,
+      ),
+    );
+  }
 }
 
 class OverlayEngine {
@@ -971,7 +1049,96 @@ class OverlayEngine {
     _controller = null;
   }
 
-  /// Draw consensus position opinions onto the map
+  bool _opinionsReady = false;
+  bool _liveGpsReady = false;
+  bool _ghostLayersReady = false;
+  bool _crossfireReady = false;
+  bool _flightPlanReady = false;
+  bool _rangeRingsReady = false;
+  bool _truthTrailsReady = false;
+  bool _spoofHeatReady = false;
+
+  /// Serializes source/layer creation so concurrent draws don't race
+  /// (STYLE_NOT_READY → source missing → Layer already exists spam).
+  Future<void> _setupLock = Future.value();
+
+  Future<T> _withSetupLock<T>(Future<T> Function() fn) {
+    final previous = _setupLock;
+    late final Future<T> next;
+    next = previous.catchError((_) {}).then((_) => fn());
+    _setupLock = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  bool _isAlreadyExists(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('already exists') || s.contains('source already');
+  }
+
+  bool _isStyleNotReady(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('style_not_ready') ||
+        s.contains('style is null') ||
+        s.contains('not fully loaded');
+  }
+
+  Future<bool> _ensureGeoJsonSource(
+    MapLibreMapController c,
+    String sourceId,
+    Map<String, dynamic> geo,
+  ) async {
+    try {
+      await c.addGeoJsonSource(sourceId, geo);
+      return true;
+    } catch (e) {
+      if (_isAlreadyExists(e)) {
+        try {
+          await c.setGeoJsonSource(sourceId, geo);
+          return true;
+        } catch (_) {
+          return true; // source exists; layers may still need add
+        }
+      }
+      if (_isStyleNotReady(e)) return false;
+      // Source missing or other — try set (won't work if absent).
+      try {
+        await c.setGeoJsonSource(sourceId, geo);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  /// addXLayer; "already exists" counts as success.
+  Future<bool> _tryAddLayer(Future<void> Function() add) async {
+    try {
+      await add();
+      return true;
+    } catch (e) {
+      if (_isAlreadyExists(e)) return true;
+      if (!_isStyleNotReady(e)) {
+        debugPrint('[OverlayEngine] addLayer: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<void> _clearSourceIfReady(
+    MapLibreMapController c,
+    String sourceId,
+    bool ready,
+  ) async {
+    if (!ready) return;
+    try {
+      await c.setGeoJsonSource(sourceId, {
+        'type': 'FeatureCollection',
+        'features': [],
+      });
+    } catch (_) {}
+  }
+
+  /// Draw consensus position opinions onto the map (GeoJSON — no AnnotationManager).
   Future<void> drawOpinions(
     List<PositionOpinion> opinions,
     bool visible,
@@ -979,49 +1146,1060 @@ class OverlayEngine {
     final c = _controller;
     if (c == null) return;
 
-    try {
-      await c.clearCircles();
-      await c.clearSymbols();
-    } catch (e) {
-      debugPrint('[OverlayEngine] clearCircles/clearSymbols failed: $e');
+    final features = <Map<String, dynamic>>[];
+    if (visible) {
+      for (final op in opinions) {
+        if (op.confidence == 0 || op.status == 'unavailable') continue;
+        if (op.latitude == 0 && op.longitude == 0) continue;
+        // Skip raw GPS here — [drawLiveGps] owns the blue puck.
+        if (op.sourceType == 'gps') continue;
+        final color = _colorForSource(op.sourceType);
+        final hex =
+            '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
+        features.add({
+          'type': 'Feature',
+          'properties': {
+            'label': op.shortCode,
+            'color': hex,
+          },
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [op.longitude, op.latitude],
+          },
+        });
+      }
+    }
+
+    final geo = {'type': 'FeatureCollection', 'features': features};
+
+    await _withSetupLock(() async {
+      try {
+        if (!_opinionsReady) {
+          final ok = await _ensureGeoJsonSource(c, 'opinions-overlay', geo);
+          if (!ok) return;
+          final circles = await _tryAddLayer(
+            () => c.addCircleLayer(
+              'opinions-overlay',
+              'opinions-circles',
+              const CircleLayerProperties(
+                circleRadius: 9,
+                circleColor: '#FFC107',
+                circleOpacity: 0.9,
+                circleStrokeColor: '#FFFFFF',
+                circleStrokeWidth: 2,
+              ),
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addSymbolLayer(
+              'opinions-overlay',
+              'opinions-labels',
+              const SymbolLayerProperties(
+                textField: '{label}',
+                textSize: 11,
+                textColor: '#0A1628',
+                textHaloColor: '#FFFFFF',
+                textHaloWidth: 1.4,
+                textOffset: [0.0, 1.15],
+                textFont: ['Noto Sans Regular'],
+              ),
+            ),
+          );
+          if (circles) _opinionsReady = true;
+        } else {
+          await c.setGeoJsonSource('opinions-overlay', geo);
+        }
+      } catch (e) {
+        debugPrint('[OverlayEngine] drawOpinions failed: $e');
+        _opinionsReady = false;
+      }
+    });
+  }
+
+  /// Blue GPS puck + accuracy halo (replaces native myLocation on iOS).
+  Future<void> drawLiveGps({
+    required double lat,
+    required double lng,
+    required double accuracyM,
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+
+    final haloPx = (accuracyM / 3).clamp(16.0, 56.0);
+    final geo = {
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'properties': {'kind': 'halo', 'r': haloPx},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [lng, lat],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': {'kind': 'dot', 'label': 'G'},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [lng, lat],
+          },
+        },
+      ],
+    };
+
+    await _withSetupLock(() async {
+      try {
+        if (!_liveGpsReady) {
+          final ok = await _ensureGeoJsonSource(c, 'live-gps', geo);
+          if (!ok) return;
+          final halo = await _tryAddLayer(
+            () => c.addCircleLayer(
+              'live-gps',
+              'live-gps-halo',
+              const CircleLayerProperties(
+                circleRadius: 28,
+                circleColor: '#2196F3',
+                circleOpacity: 0.22,
+                circleStrokeColor: '#2196F3',
+                circleStrokeWidth: 1,
+                circleStrokeOpacity: 0.45,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'halo',
+              ],
+            ),
+          );
+          final dot = await _tryAddLayer(
+            () => c.addCircleLayer(
+              'live-gps',
+              'live-gps-dot',
+              const CircleLayerProperties(
+                circleRadius: 10,
+                circleColor: '#2196F3',
+                circleOpacity: 1,
+                circleStrokeColor: '#FFFFFF',
+                circleStrokeWidth: 3,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'dot',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addSymbolLayer(
+              'live-gps',
+              'live-gps-label',
+              const SymbolLayerProperties(
+                textField: '{label}',
+                textSize: 11,
+                textColor: '#0A1628',
+                textHaloColor: '#FFFFFF',
+                textHaloWidth: 1.2,
+                textOffset: [0.0, 1.3],
+                textFont: ['Noto Sans Regular'],
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'dot',
+              ],
+            ),
+          );
+          if (halo && dot) _liveGpsReady = true;
+        } else {
+          await c.setGeoJsonSource('live-gps', geo);
+        }
+      } catch (e) {
+        debugPrint('[OverlayEngine] drawLiveGps failed: $e');
+        _liveGpsReady = false;
+      }
+    });
+  }
+
+  void resetOpinionLayers() {
+    _opinionsReady = false;
+    _liveGpsReady = false;
+  }
+
+  /// Ghost pin (GPS claim) + solid trusted pin + red lie line.
+  Future<void> drawGhostLie({
+    required bool visible,
+    double? gpsLat,
+    double? gpsLng,
+    double? trustedLat,
+    double? trustedLng,
+    double? lieDistanceM,
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+
+    if (!visible ||
+        gpsLat == null ||
+        gpsLng == null ||
+        trustedLat == null ||
+        trustedLng == null) {
+      await _clearSourceIfReady(c, 'ghost-lie', _ghostLayersReady);
       return;
     }
 
-    if (!visible) return;
+    final distLabel = lieDistanceM == null
+        ? 'GPS claim'
+        : lieDistanceM >= 1000
+            ? 'GPS is ${(lieDistanceM / 1000).toStringAsFixed(1)} km from reality'
+            : 'GPS is ${lieDistanceM.round()} m from reality';
 
-    for (final op in opinions) {
-      if (op.confidence == 0 || !op.isActive) continue;
+    final geo = {
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'properties': {'kind': 'line', 'label': distLabel},
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': [
+              [gpsLng, gpsLat],
+              [trustedLng, trustedLat],
+            ],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': {'kind': 'ghost', 'label': 'GPS'},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [gpsLng, gpsLat],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': {'kind': 'trusted', 'label': 'REAL'},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [trustedLng, trustedLat],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': {'kind': 'label', 'label': distLabel},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [
+              (gpsLng + trustedLng) / 2,
+              (gpsLat + trustedLat) / 2,
+            ],
+          },
+        },
+      ],
+    };
 
-      final color = _colorForSource(op.sourceType);
-      final hexColor =
-          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
-
+    await _withSetupLock(() async {
       try {
-        await c.addCircle(
-          CircleOptions(
-            geometry: LatLng(op.latitude, op.longitude),
-            circleRadius: op.sourceType == 'whami' ? 12.0 : 8.0,
-            circleColor: hexColor,
-            circleOpacity: 0.85,
-            circleStrokeColor: '#FFFFFF',
-            circleStrokeWidth: 1.5,
-          ),
-        );
-
-        await c.addSymbol(
-          SymbolOptions(
-            geometry: LatLng(op.latitude, op.longitude),
-            textField: op.shortCode,
-            textColor: '#FFFFFF',
-            textSize: 9.0,
-            textAnchor: 'center',
-          ),
-        );
+        if (!_ghostLayersReady) {
+          final ok = await _ensureGeoJsonSource(c, 'ghost-lie', geo);
+          if (!ok) return;
+          final line = await _tryAddLayer(
+            () => c.addLineLayer(
+              'ghost-lie',
+              'ghost-lie-line',
+              const LineLayerProperties(
+                lineColor: '#E53935',
+                lineWidth: 3.0,
+                lineOpacity: 0.9,
+                lineDasharray: [2.0, 1.5],
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'line',
+              ],
+            ),
+          );
+          final ghost = await _tryAddLayer(
+            () => c.addCircleLayer(
+              'ghost-lie',
+              'ghost-lie-ghost',
+              const CircleLayerProperties(
+                circleRadius: 14,
+                circleColor: '#90CAF9',
+                circleOpacity: 0.35,
+                circleStrokeColor: '#1565C0',
+                circleStrokeWidth: 2,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'ghost',
+              ],
+            ),
+          );
+          final trusted = await _tryAddLayer(
+            () => c.addCircleLayer(
+              'ghost-lie',
+              'ghost-lie-trusted',
+              const CircleLayerProperties(
+                circleRadius: 11,
+                circleColor: '#43A047',
+                circleOpacity: 0.95,
+                circleStrokeColor: '#FFFFFF',
+                circleStrokeWidth: 2.5,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'trusted',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addSymbolLayer(
+              'ghost-lie',
+              'ghost-lie-label',
+              const SymbolLayerProperties(
+                textField: '{label}',
+                textSize: 11,
+                textColor: '#B71C1C',
+                textHaloColor: '#FFFFFF',
+                textHaloWidth: 1.5,
+                textOffset: [0.0, -1.4],
+                textFont: ['Noto Sans Regular'],
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'label',
+              ],
+            ),
+          );
+          if (line && ghost && trusted) _ghostLayersReady = true;
+        } else {
+          await c.setGeoJsonSource('ghost-lie', geo);
+        }
       } catch (e) {
-        debugPrint('[OverlayEngine] addCircle/addSymbol failed: $e');
-        return; // Stop drawing — annotation manager likely invalidated
+        debugPrint('[OverlayEngine] drawGhostLie failed: $e');
+        _ghostLayersReady = false;
       }
+    });
+  }
+
+  void resetGhostLayers() {
+    _ghostLayersReady = false;
+  }
+
+  /// Arrows from trusted reality to each witness claim (agree = green, outlier = red).
+  Future<void> drawCrossfire({
+    required bool visible,
+    required double trustedLat,
+    required double trustedLng,
+    required List<({
+      String id,
+      double lat,
+      double lng,
+      bool agrees,
+      bool isOutlier,
+      String shortCode,
+    })> witnesses,
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+
+    if (!visible || witnesses.isEmpty) {
+      await _clearSourceIfReady(c, 'crossfire', _crossfireReady);
+      return;
     }
+
+    final features = <Map<String, dynamic>>[];
+    for (final w in witnesses) {
+      // Skip near-zero arrows (witness pinned on trusted).
+      final same = (w.lat - trustedLat).abs() < 1e-6 &&
+          (w.lng - trustedLng).abs() < 1e-6;
+      if (same) continue;
+      final kind = w.isOutlier
+          ? 'outlier'
+          : w.agrees
+              ? 'agree'
+              : 'soft';
+      features.add({
+        'type': 'Feature',
+        'properties': {'kind': kind, 'label': w.shortCode},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [
+            [trustedLng, trustedLat],
+            [w.lng, w.lat],
+          ],
+        },
+      });
+      features.add({
+        'type': 'Feature',
+        'properties': {'kind': '${kind}_pt', 'label': w.shortCode},
+        'geometry': {
+          'type': 'Point',
+          'coordinates': [w.lng, w.lat],
+        },
+      });
+    }
+
+    final geo = {'type': 'FeatureCollection', 'features': features};
+
+    await _withSetupLock(() async {
+      try {
+        if (!_crossfireReady) {
+          final ok = await _ensureGeoJsonSource(c, 'crossfire', geo);
+          if (!ok) return;
+          final agree = await _tryAddLayer(
+            () => c.addLineLayer(
+              'crossfire',
+              'crossfire-agree',
+              const LineLayerProperties(
+                lineColor: '#43A047',
+                lineWidth: 2.5,
+                lineOpacity: 0.85,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'agree',
+              ],
+            ),
+          );
+          final outlier = await _tryAddLayer(
+            () => c.addLineLayer(
+              'crossfire',
+              'crossfire-outlier',
+              const LineLayerProperties(
+                lineColor: '#E53935',
+                lineWidth: 3.0,
+                lineOpacity: 0.95,
+                lineDasharray: [1.5, 1.2],
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'outlier',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addLineLayer(
+              'crossfire',
+              'crossfire-soft',
+              const LineLayerProperties(
+                lineColor: '#B28704',
+                lineWidth: 2.0,
+                lineOpacity: 0.75,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'soft',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addSymbolLayer(
+              'crossfire',
+              'crossfire-labels',
+              const SymbolLayerProperties(
+                textField: '{label}',
+                textSize: 11,
+                textColor: '#FFFFFF',
+                textHaloColor: '#0A1628',
+                textHaloWidth: 1.5,
+                textOffset: [0.0, -1.2],
+                textFont: ['Noto Sans Regular'],
+              ),
+              filter: [
+                'in',
+                ['get', 'kind'],
+                [
+                  'literal',
+                  ['agree_pt', 'outlier_pt', 'soft_pt']
+                ],
+              ],
+            ),
+          );
+          if (agree && outlier) _crossfireReady = true;
+        } else {
+          await c.setGeoJsonSource('crossfire', geo);
+        }
+      } catch (e) {
+        debugPrint('[OverlayEngine] drawCrossfire failed: $e');
+        _crossfireReady = false;
+      }
+    });
+  }
+
+  void resetCrossfireLayers() {
+    _crossfireReady = false;
+  }
+
+  /// Premium travel-route overlay: casing + cyan track, role-colored pins.
+  Future<void> drawFlightPlan({
+    required bool visible,
+    required List<({String id, String name, double lat, double lng})> waypoints,
+    double? progressLat,
+    double? progressLng,
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+    const sourceId = 'travel-route';
+
+    if (!visible || waypoints.isEmpty) {
+      await _clearSourceIfReady(c, sourceId, _flightPlanReady);
+      return;
+    }
+
+    final features = <Map<String, dynamic>>[];
+    if (waypoints.length >= 2) {
+      features.add({
+        'type': 'Feature',
+        'properties': {'kind': 'route'},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [
+            for (final w in waypoints) [w.lng, w.lat],
+          ],
+        },
+      });
+    }
+    for (var i = 0; i < waypoints.length; i++) {
+      final w = waypoints[i];
+      final role = i == 0
+          ? 'origin'
+          : (i == waypoints.length - 1 && waypoints.length > 1)
+              ? 'destination'
+              : 'enroute';
+      final idx = (i + 1).toString().padLeft(2, '0');
+      features.add({
+        'type': 'Feature',
+        'properties': {
+          'kind': 'waypoint',
+          'role': role,
+          'label': '$idx  ${w.name}',
+          'index': i + 1,
+        },
+        'geometry': {
+          'type': 'Point',
+          'coordinates': [w.lng, w.lat],
+        },
+      });
+    }
+    if (progressLat != null && progressLng != null) {
+      features.add({
+        'type': 'Feature',
+        'properties': {'kind': 'progress', 'label': 'YOU'},
+        'geometry': {
+          'type': 'Point',
+          'coordinates': [progressLng, progressLat],
+        },
+      });
+    }
+
+    final geo = {'type': 'FeatureCollection', 'features': features};
+
+    await _withSetupLock(() async {
+      try {
+        if (!_flightPlanReady) {
+          final ok = await _ensureGeoJsonSource(c, sourceId, geo);
+          if (!ok) return;
+          // Dark casing so the route reads on satellite + streets.
+          final casing = await _tryAddLayer(
+            () => c.addLineLayer(
+              sourceId,
+              'travel-route-casing',
+              const LineLayerProperties(
+                lineColor: '#0A1628',
+                lineWidth: 8.0,
+                lineOpacity: 0.6,
+                lineCap: 'round',
+                lineJoin: 'round',
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'route',
+              ],
+            ),
+          );
+          final line = await _tryAddLayer(
+            () => c.addLineLayer(
+              sourceId,
+              'travel-route-line',
+              const LineLayerProperties(
+                lineColor: '#4FC3F7',
+                lineWidth: 4.0,
+                lineOpacity: 1.0,
+                lineCap: 'round',
+                lineJoin: 'round',
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'route',
+              ],
+            ),
+          );
+          // Separate simple layers (no data-driven match) for reliability.
+          final origin = await _tryAddLayer(
+            () => c.addCircleLayer(
+              sourceId,
+              'travel-route-origin',
+              const CircleLayerProperties(
+                circleRadius: 10,
+                circleColor: '#43A047',
+                circleStrokeColor: '#FFFFFF',
+                circleStrokeWidth: 2.5,
+              ),
+              filter: [
+                'all',
+                [
+                  '==',
+                  ['get', 'kind'],
+                  'waypoint',
+                ],
+                [
+                  '==',
+                  ['get', 'role'],
+                  'origin',
+                ],
+              ],
+            ),
+          );
+          final enroute = await _tryAddLayer(
+            () => c.addCircleLayer(
+              sourceId,
+              'travel-route-enroute',
+              const CircleLayerProperties(
+                circleRadius: 8,
+                circleColor: '#4FC3F7',
+                circleStrokeColor: '#FFFFFF',
+                circleStrokeWidth: 2.25,
+              ),
+              filter: [
+                'all',
+                [
+                  '==',
+                  ['get', 'kind'],
+                  'waypoint',
+                ],
+                [
+                  '==',
+                  ['get', 'role'],
+                  'enroute',
+                ],
+              ],
+            ),
+          );
+          final dest = await _tryAddLayer(
+            () => c.addCircleLayer(
+              sourceId,
+              'travel-route-dest',
+              const CircleLayerProperties(
+                circleRadius: 11,
+                circleColor: '#FFC107',
+                circleStrokeColor: '#0A1628',
+                circleStrokeWidth: 2.5,
+              ),
+              filter: [
+                'all',
+                [
+                  '==',
+                  ['get', 'kind'],
+                  'waypoint',
+                ],
+                [
+                  '==',
+                  ['get', 'role'],
+                  'destination',
+                ],
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addCircleLayer(
+              sourceId,
+              'travel-route-progress-halo',
+              const CircleLayerProperties(
+                circleRadius: 14,
+                circleColor: '#FFC107',
+                circleOpacity: 0.28,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'progress',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addCircleLayer(
+              sourceId,
+              'travel-route-progress',
+              const CircleLayerProperties(
+                circleRadius: 8.5,
+                circleColor: '#FFC107',
+                circleStrokeColor: '#0A1628',
+                circleStrokeWidth: 2.5,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'progress',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addSymbolLayer(
+              sourceId,
+              'travel-route-labels',
+              const SymbolLayerProperties(
+                textField: '{label}',
+                textSize: 13,
+                textColor: '#0A1628',
+                textHaloColor: '#FFFFFF',
+                textHaloWidth: 2.0,
+                textOffset: [0.0, -1.6],
+                textFont: ['Noto Sans Regular'],
+                textAllowOverlap: true,
+              ),
+              filter: [
+                'in',
+                ['get', 'kind'],
+                [
+                  'literal',
+                  ['waypoint', 'progress'],
+                ],
+              ],
+            ),
+          );
+          if (casing || line || origin || enroute || dest) {
+            _flightPlanReady = true;
+          }
+        } else {
+          await c.setGeoJsonSource(sourceId, geo);
+        }
+      } catch (e) {
+        debugPrint('[OverlayEngine] drawFlightPlan failed: $e');
+        _flightPlanReady = false;
+      }
+    });
+  }
+
+  void resetFlightPlanLayers() {
+    _flightPlanReady = false;
+  }
+
+  /// Distance rings around the aircraft / trusted fix (km).
+  Future<void> drawRangeRings({
+    required bool visible,
+    double? centerLat,
+    double? centerLng,
+    List<double> radiiKm = const [5, 10, 20, 40],
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+
+    if (!visible || centerLat == null || centerLng == null) {
+      await _clearSourceIfReady(c, 'range-rings', _rangeRingsReady);
+      return;
+    }
+
+    final features = <Map<String, dynamic>>[];
+    for (final km in radiiKm) {
+      features.add({
+        'type': 'Feature',
+        'properties': {
+          'kind': 'ring',
+          'label': km >= 1 ? '${km.round()} km' : '${(km * 1000).round()} m',
+        },
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': _circleCoords(centerLat, centerLng, km * 1000),
+        },
+      });
+      // Label at due-east point on the ring.
+      final labelPt = _destinationPoint(centerLat, centerLng, km * 1000, 90);
+      features.add({
+        'type': 'Feature',
+        'properties': {
+          'kind': 'label',
+          'label': km >= 1 ? '${km.round()} km' : '${(km * 1000).round()} m',
+        },
+        'geometry': {
+          'type': 'Point',
+          'coordinates': [labelPt.$2, labelPt.$1],
+        },
+      });
+    }
+
+    final geo = {'type': 'FeatureCollection', 'features': features};
+
+    await _withSetupLock(() async {
+      try {
+        if (!_rangeRingsReady) {
+          final ok = await _ensureGeoJsonSource(c, 'range-rings', geo);
+          if (!ok) return;
+          final rings = await _tryAddLayer(
+            () => c.addLineLayer(
+              'range-rings',
+              'range-rings-line',
+              const LineLayerProperties(
+                lineColor: '#90CAF9',
+                lineWidth: 1.4,
+                lineOpacity: 0.75,
+                lineDasharray: [2.0, 2.0],
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'ring',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addSymbolLayer(
+              'range-rings',
+              'range-rings-labels',
+              const SymbolLayerProperties(
+                textField: '{label}',
+                textSize: 10,
+                textColor: '#1565C0',
+                textHaloColor: '#FFFFFF',
+                textHaloWidth: 1.2,
+                textFont: ['Noto Sans Regular'],
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'label',
+              ],
+            ),
+          );
+          if (rings) _rangeRingsReady = true;
+        } else {
+          await c.setGeoJsonSource('range-rings', geo);
+        }
+      } catch (e) {
+        debugPrint('[OverlayEngine] drawRangeRings failed: $e');
+        _rangeRingsReady = false;
+      }
+    });
+  }
+
+  void resetRangeRingLayers() {
+    _rangeRingsReady = false;
+  }
+
+  /// Truth Mode dual trails: cyan trusted vs amber GPS claim.
+  Future<void> drawTruthTrails({
+    required bool visible,
+    required List<Map<String, double>> trusted,
+    required List<Map<String, double>> claimed,
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+    const sourceId = 'truth-trails';
+    if (!visible || (trusted.length < 2 && claimed.length < 2)) {
+      await _clearSourceIfReady(c, sourceId, _truthTrailsReady);
+      _truthTrailsReady = false;
+      return;
+    }
+
+    final features = <Map<String, dynamic>>[];
+    if (trusted.length >= 2) {
+      features.add({
+        'type': 'Feature',
+        'properties': {'kind': 'trusted'},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [
+            for (final p in trusted) [p['longitude'], p['latitude']],
+          ],
+        },
+      });
+    }
+    if (claimed.length >= 2) {
+      features.add({
+        'type': 'Feature',
+        'properties': {'kind': 'claimed'},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [
+            for (final p in claimed) [p['longitude'], p['latitude']],
+          ],
+        },
+      });
+    }
+    final geo = {'type': 'FeatureCollection', 'features': features};
+
+    await _withSetupLock(() async {
+      try {
+        if (!_truthTrailsReady) {
+          final ok = await _ensureGeoJsonSource(c, sourceId, geo);
+          if (!ok) return;
+          await _tryAddLayer(
+            () => c.addLineLayer(
+              sourceId,
+              'truth-trusted',
+              const LineLayerProperties(
+                lineColor: '#4FC3F7',
+                lineWidth: 4.0,
+                lineOpacity: 0.9,
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'trusted',
+              ],
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addLineLayer(
+              sourceId,
+              'truth-claimed',
+              const LineLayerProperties(
+                lineColor: '#FFC107',
+                lineWidth: 3.0,
+                lineOpacity: 0.85,
+                lineDasharray: [2, 1.5],
+              ),
+              filter: [
+                '==',
+                ['get', 'kind'],
+                'claimed',
+              ],
+            ),
+          );
+          _truthTrailsReady = true;
+        } else {
+          await c.setGeoJsonSource(sourceId, geo);
+        }
+      } catch (e) {
+        debugPrint('[OverlayEngine] drawTruthTrails failed: $e');
+        _truthTrailsReady = false;
+      }
+    });
+  }
+
+  /// Spoof heatmap circles (GeoJSON polygons approximated as rings).
+  Future<void> drawSpoofHeat({
+    required bool visible,
+    required List<
+            ({
+              double lat,
+              double lng,
+              double radiusM,
+              double intensity,
+              String label
+            })>
+        cells,
+  }) async {
+    final c = _controller;
+    if (c == null) return;
+    const sourceId = 'spoof-heat';
+    if (!visible || cells.isEmpty) {
+      await _clearSourceIfReady(c, sourceId, _spoofHeatReady);
+      _spoofHeatReady = false;
+      return;
+    }
+
+    final features = <Map<String, dynamic>>[];
+    for (final cell in cells) {
+      features.add({
+        'type': 'Feature',
+        'properties': {
+          'label': cell.label,
+          'intensity': cell.intensity,
+        },
+        'geometry': {
+          'type': 'Polygon',
+          'coordinates': [
+            _circleCoords(cell.lat, cell.lng, cell.radiusM),
+          ],
+        },
+      });
+    }
+    final geo = {'type': 'FeatureCollection', 'features': features};
+
+    await _withSetupLock(() async {
+      try {
+        if (!_spoofHeatReady) {
+          final ok = await _ensureGeoJsonSource(c, sourceId, geo);
+          if (!ok) return;
+          await _tryAddLayer(
+            () => c.addFillLayer(
+              sourceId,
+              'spoof-heat-fill',
+              const FillLayerProperties(
+                fillColor: '#E53935',
+                fillOpacity: 0.18,
+              ),
+            ),
+          );
+          await _tryAddLayer(
+            () => c.addLineLayer(
+              sourceId,
+              'spoof-heat-outline',
+              const LineLayerProperties(
+                lineColor: '#E53935',
+                lineWidth: 1.5,
+                lineOpacity: 0.55,
+              ),
+            ),
+          );
+          _spoofHeatReady = true;
+        } else {
+          await c.setGeoJsonSource(sourceId, geo);
+        }
+      } catch (e) {
+        debugPrint('[OverlayEngine] drawSpoofHeat failed: $e');
+        _spoofHeatReady = false;
+      }
+    });
+  }
+
+  /// Approx geodesic circle as closed LineString [lng, lat] ring.
+  static List<List<double>> _circleCoords(
+    double lat,
+    double lng,
+    double radiusM, {
+    int steps = 64,
+  }) {
+    final coords = <List<double>>[];
+    for (var i = 0; i <= steps; i++) {
+      final bearing = (i / steps) * 360.0;
+      final p = _destinationPoint(lat, lng, radiusM, bearing);
+      coords.add([p.$2, p.$1]);
+    }
+    return coords;
+  }
+
+  /// Destination point given start, distance (m), bearing (deg).
+  static (double, double) _destinationPoint(
+    double lat,
+    double lng,
+    double distanceM,
+    double bearingDeg,
+  ) {
+    const r = 6371000.0;
+    final brng = bearingDeg * pi / 180;
+    final lat1 = lat * pi / 180;
+    final lon1 = lng * pi / 180;
+    final ang = distanceM / r;
+    final lat2 = asin(
+      sin(lat1) * cos(ang) + cos(lat1) * sin(ang) * cos(brng),
+    );
+    final lon2 = lon1 +
+        atan2(
+          sin(brng) * sin(ang) * cos(lat1),
+          cos(ang) - sin(lat1) * sin(lat2),
+        );
+    return (lat2 * 180 / pi, lon2 * 180 / pi);
   }
 
   Color _colorForSource(String sourceType) {

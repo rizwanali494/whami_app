@@ -36,7 +36,6 @@ import '../features/whami_air/air_screen.dart';
 import '../features/whami_air/efb_advisory_screen.dart';
 import '../features/whami_air/ground_station_screen.dart';
 import '../features/map/trust_timeline_screen.dart';
-import '../core/constants/app_colors.dart';
 import '../core/preferences/app_preferences.dart';
 import '../core/widgets/offline_banner.dart';
 
@@ -221,58 +220,81 @@ class _WhamiShell extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           OfflineBanner(repository: whamiRepo),
-          NavigationBarTheme(
-            data: NavigationBarThemeData(
-              backgroundColor: AppColors.headerBg,
-              indicatorColor: AppColors.whami.withValues(alpha: 0.22),
-              labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                final selected = states.contains(WidgetState.selected);
-                return TextStyle(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? AppColors.whami : const Color(0xFF90A4AE),
-                );
-              }),
-            ),
-            child: NavigationBar(
-              height: 68,
-              backgroundColor: AppColors.headerBg,
-              indicatorColor: AppColors.whami.withValues(alpha: 0.22),
-              selectedIndex: shell.currentIndex,
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              onDestinationSelected: (index) => shell.goBranch(
-                index,
-                initialLocation: index == shell.currentIndex,
-              ),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.map_outlined, color: Color(0xFF90A4AE)),
-                  selectedIcon: Icon(Icons.map, color: AppColors.whami),
-                  label: 'Map',
+          Builder(
+            builder: (context) {
+              final tablet =
+                  MediaQuery.sizeOf(context).shortestSide >= 600;
+              const cyan = Color(0xFF4FC3F7);
+              const muted = Color(0xFF78909C);
+              return NavigationBarTheme(
+                data: NavigationBarThemeData(
+                  backgroundColor: const Color(0xFF0A1628),
+                  indicatorColor: cyan.withValues(alpha: 0.12),
+                  overlayColor: WidgetStatePropertyAll(
+                    cyan.withValues(alpha: 0.08),
+                  ),
+                  labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                    final selected = states.contains(WidgetState.selected);
+                    return TextStyle(
+                      fontSize: tablet ? 12 : 11,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500,
+                      letterSpacing: 0.15,
+                      color: selected ? cyan : muted,
+                    );
+                  }),
+                  iconTheme: WidgetStateProperty.resolveWith((states) {
+                    final selected = states.contains(WidgetState.selected);
+                    return IconThemeData(
+                      size: tablet ? 24 : 22,
+                      color: selected ? cyan : muted,
+                    );
+                  }),
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.verified_outlined, color: Color(0xFF90A4AE)),
-                  selectedIcon: Icon(Icons.verified, color: AppColors.whami),
-                  label: 'Verify',
+                child: NavigationBar(
+                  height: tablet ? 72 : 64,
+                  backgroundColor: const Color(0xFF0A1628),
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  indicatorColor: cyan.withValues(alpha: 0.12),
+                  selectedIndex: shell.currentIndex,
+                  labelBehavior:
+                      NavigationDestinationLabelBehavior.alwaysShow,
+                  onDestinationSelected: (index) => shell.goBranch(
+                    index,
+                    initialLocation: index == shell.currentIndex,
+                  ),
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.map_outlined),
+                      selectedIcon: Icon(Icons.map),
+                      label: 'Map',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.verified_outlined),
+                      selectedIcon: Icon(Icons.verified),
+                      label: 'Verify',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.sensors_outlined),
+                      selectedIcon: Icon(Icons.sensors),
+                      label: 'Sensors',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.offline_pin_outlined),
+                      selectedIcon: Icon(Icons.offline_pin),
+                      label: 'Offline',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.history_outlined),
+                      selectedIcon: Icon(Icons.history),
+                      label: 'Activity',
+                    ),
+                  ],
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.sensors_outlined, color: Color(0xFF90A4AE)),
-                  selectedIcon: Icon(Icons.sensors, color: AppColors.whami),
-                  label: 'Sensors',
-                ),
-                NavigationDestination(
-                  icon:
-                      Icon(Icons.offline_pin_outlined, color: Color(0xFF90A4AE)),
-                  selectedIcon: Icon(Icons.offline_pin, color: AppColors.whami),
-                  label: 'Offline',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.history, color: Color(0xFF90A4AE)),
-                  selectedIcon: Icon(Icons.history, color: AppColors.whami),
-                  label: 'Activity',
-                ),
-              ],
-            ),
+              );
+            },
           ),
         ],
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import 'overlay_close_button.dart';
 
 /// Hard, unmistakable banner when GPS disagrees with real-world witnesses.
 class SpoofAlarmBanner extends StatelessWidget {
@@ -21,7 +22,7 @@ class SpoofAlarmBanner extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       elevation: 6,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -43,13 +44,7 @@ class SpoofAlarmBanner extends StatelessWidget {
                   ),
                 ),
                 if (onDismiss != null)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: onDismiss,
-                    icon: const Icon(Icons.close, color: Colors.white70, size: 20),
-                  ),
+                  OverlayCloseButton(onPressed: onDismiss!),
               ],
             ),
             const SizedBox(height: 6),
@@ -61,26 +56,50 @@ class SpoofAlarmBanner extends StatelessWidget {
                 height: 1.3,
               ),
             ),
-            if (onVerify != null) ...[
+            if (onVerify != null || onDismiss != null) ...[
               const SizedBox(height: 10),
-              SizedBox(
-                height: 40,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFFB71C1C),
-                  ),
-                  onPressed: onVerify,
-                  child: const Text(
-                    'Lock to Real World',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
+              Row(
+                children: [
+                  if (onVerify != null)
+                    Expanded(
+                      child: SizedBox(
+                        height: 40,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFFB71C1C),
+                          ),
+                          onPressed: onVerify,
+                          child: const Text(
+                            'Lock to Real World',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (onVerify != null && onDismiss != null)
+                    const SizedBox(width: 8),
+                  if (onDismiss != null)
+                    SizedBox(
+                      height: 40,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                        ),
+                        onPressed: onDismiss,
+                        child: const Text(
+                          'Dismiss',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
             const SizedBox(height: 4),
             Text(
-              'WHAMI cross-check: GPS jumped or disagrees with mag / baro / IMU / landmarks.',
+              'Ghost pin = GPS claim. Solid pin = verified by the real world.',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.85),
                 fontSize: 11,

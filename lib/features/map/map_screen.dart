@@ -1,20 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/app_colors.dart';
 import '../../core/trust/trust_summary.dart';
 import '../../core/widgets/status_panel.dart';
-import '../../data/models/position_opinion.dart';
 import '../../data/repositories/whami_repository.dart';
 import '../whami_air/air_preferences.dart';
 import '../whami_air/widgets/air_trust_strip.dart';
 import 'widgets/whami_map_view.dart';
 import 'widgets/map_layer_control.dart';
 import 'widgets/spoof_alarm_banner.dart';
+import 'widgets/witness_crossfire_panel.dart';
+import 'widgets/flight_plan_panel.dart';
+import 'widgets/map_gps_hud.dart';
+import 'widgets/compact_trust_panel.dart';
+import 'widgets/map_style_sheet.dart';
+import 'widgets/trust_copilot_strip.dart';
+import 'widgets/truth_mode_panel.dart';
+import 'widgets/witness_mesh_panel.dart';
+import '../../core/theme/whami_aviation.dart';
+import '../../core/config/map_basemap_style.dart';
 
-/// Map-first home screen matching the trust-first mockup:
-/// full-bleed map, light header, white controls, glanceable trust card.
+/// Map-first aviation home: translucent chrome, compact trust card, GNSS HUD.
 class MapScreen extends StatefulWidget {
   final WhamiRepository repository;
 
@@ -24,7 +33,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   final Map<String, bool> _layerVisibility = {
     'mapTiles': true,
     'landmarks': true,
@@ -32,70 +41,190 @@ class _MapScreenState extends State<MapScreen> {
     'magnetic': true,
     'opinions': true,
     'uncertainty': true,
+    'rangeRings': true,
+    'spoofHeat': false,
   };
 
-  final DraggableScrollableController _sheetController =
-      DraggableScrollableController();
-  double _sheetExtent = 0.42;
-  bool _detailsExpanded = true;
   LocationPermission? _permission;
-
-  static const double _sheetInitial = 0.42;
-  static const double _sheetMin = 0.26;
-  static const double _sheetMax = 0.78;
+  bool? _locationServicesEnabled;
+  bool _crossfireDismissed = false;
+  bool _wasGhostPinVisible = false;
+  bool _lieLineDismissed = false;
+  bool _permissionBannerDismissed = false;
+  bool _locationBannerDismissed = false;
+  bool _didAutoStart = false;
+  bool _flightPlanPanelOpen = false;
+  bool _trustExpanded = false;
+  bool _hudExpanded = false;
+  bool _truthPanelOpen = false;
+  bool _meshPanelOpen = false;
 
   WhamiRepository get repo => widget.repository;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     repo.addListener(_onRepoChanged);
-    _sheetController.addListener(_onSheetChanged);
     _checkPermission();
+    // GpsService may show the system prompt in parallel; re-read after it settles.
+    Future<void>.delayed(const Duration(seconds: 2), _checkPermission);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_autoStartTracking());
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     repo.removeListener(_onRepoChanged);
-    _sheetController.removeListener(_onSheetChanged);
-    _sheetController.dispose();
     super.dispose();
   }
 
-  void _onRepoChanged() {
-    if (mounted) setState(() {});
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshLocationStatus(retryGps: true));
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      // George demo: leaving the app restores GPS if the user toggled it off.
+      repo.restoreGpsOnLeave();
+    }
   }
 
-  void _onSheetChanged() {
-    if (!_sheetController.isAttached) return;
-    final size = _sheetController.size;
-    if ((size - _sheetExtent).abs() < 0.002) return;
-    setState(() => _sheetExtent = size);
+  Future<void> _autoStartTracking() async {
+    if (_didAutoStart || !mounted) return;
+    _didAutoStart = true;
+    await _checkPermission();
+    if (!mounted) return;
+    var p = _permission ?? await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) {
+      p = await Geolocator.requestPermission();
+      if (mounted) setState(() => _permission = p);
+    }
+    if (!mounted) return;
+    if (!repo.isTracking) {
+      repo.ensureTracking();
+    }
+  }
+
+  void _onRepoChanged() {
+    if (!mounted) return;
+    // Only auto-reopen Crossfire on a *new* Ghost Pin episode — not on every
+    // GPS tick (that was undoing the X / dismiss immediately).
+    final ghostNow = repo.showGhostPin;
+    if (ghostNow && !_wasGhostPinVisible) {
+      _crossfireDismissed = false;
+      _lieLineDismissed = false;
+    }
+    if (!ghostNow && !repo.crossfire.visible) {
+      _crossfireDismissed = false;
+    }
+    if (!ghostNow) {
+      _lieLineDismissed = false;
+    }
+    _wasGhostPinVisible = ghostNow;
+    // If GPS is already flowing but the banner still thinks we're denied,
+    // the system grant landed via GpsService — refresh permission state.
+    final denied = _permission == LocationPermission.denied ||
+        _permission == LocationPermission.deniedForever;
+    if (denied &&
+        repo.getPositionOpinions().any(
+          (o) => o.sourceType == 'gps' && o.status != 'unavailable',
+        )) {
+      _checkPermission();
+    }
+    setState(() {});
   }
 
   Future<void> _checkPermission() async {
+    await _refreshLocationStatus(retryGps: false);
+  }
+
+  Future<void> _refreshLocationStatus({required bool retryGps}) async {
+    final services = await Geolocator.isLocationServiceEnabled();
     final p = await Geolocator.checkPermission();
-    if (mounted) setState(() => _permission = p);
+    if (!mounted) return;
+    final changed =
+        services != _locationServicesEnabled || p != _permission;
+    if (changed) {
+      setState(() {
+        _locationServicesEnabled = services;
+        _permission = p;
+        if (services) _locationBannerDismissed = false;
+        if (p == LocationPermission.whileInUse ||
+            p == LocationPermission.always) {
+          _permissionBannerDismissed = false;
+        }
+      });
+    }
+    if (retryGps &&
+        services &&
+        (p == LocationPermission.whileInUse ||
+            p == LocationPermission.always)) {
+      await repo.retryLocation();
+    }
   }
 
   Future<void> _requestPermission() async {
     var p = await Geolocator.checkPermission();
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
-    }
-    if (p == LocationPermission.deniedForever) {
+    } else if (p == LocationPermission.deniedForever) {
       await Geolocator.openAppSettings();
+      p = await Geolocator.checkPermission();
     }
     if (mounted) setState(() => _permission = p);
+    if (p == LocationPermission.whileInUse ||
+        p == LocationPermission.always) {
+      await repo.retryLocation();
+    }
+  }
+
+  Future<void> _openLocationSettings() async {
+    await Geolocator.openLocationSettings();
+    // Resume lifecycle also retries; call once here for responsiveness.
+    await _refreshLocationStatus(retryGps: true);
+  }
+
+  Future<void> _retryLocation() async {
+    setState(() {
+      _locationBannerDismissed = false;
+      _permissionBannerDismissed = false;
+    });
+    final services = await Geolocator.isLocationServiceEnabled();
+    if (!services) {
+      await _openLocationSettings();
+      return;
+    }
+    final p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied ||
+        p == LocationPermission.deniedForever) {
+      await _requestPermission();
+      return;
+    }
+    await repo.retryLocation();
+    if (mounted) setState(() {});
   }
 
   void _recenter() {
+    // Follow / center on the blue GPS pin (where you are).
     final gps = repo.getPositionOpinions()
         .where((o) => o.sourceType == 'gps' && o.status != 'unavailable')
         .firstOrNull;
     if (gps != null) {
       repo.centerMapOn(gps.latitude, gps.longitude);
+      return;
     }
+    // Fallback: trusted fuse only when it is a real fix.
+    final trusted = repo.getTrustedPosition();
+    if (trusted.status == 'unavailable') return;
+    repo.centerMapOn(trusted.latitude, trusted.longitude);
+  }
+
+  void _collapseTrustPanel() {
+    if (_trustExpanded) setState(() => _trustExpanded = false);
   }
 
   @override
@@ -106,19 +235,34 @@ class _MapScreenState extends State<MapScreen> {
       trustScore: trustScore,
       opinions: opinions,
       isTracking: repo.isTracking,
+      gnssSuspicious: repo.gnssSuspicious,
     );
-    final permissionDenied = _permission == LocationPermission.denied ||
-        _permission == LocationPermission.deniedForever;
+    final hasLiveGps = opinions.any(
+      (o) => o.sourceType == 'gps' && o.status != 'unavailable',
+    );
+    final servicesOff = _locationServicesEnabled == false;
+    // Don't keep the lock card up after the user already granted (stale check
+    // or grant that came through GpsService instead of this screen).
+    final permissionDenied = !hasLiveGps &&
+        !servicesOff &&
+        (_permission == LocationPermission.denied ||
+            _permission == LocationPermission.deniedForever);
+    final showLocationServicesBanner =
+        servicesOff && !hasLiveGps && !_locationBannerDismissed;
+    final showWaitingForFix = repo.isTracking &&
+        repo.gpsEnabled &&
+        !hasLiveGps &&
+        !servicesOff &&
+        !permissionDenied &&
+        !_locationBannerDismissed;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final airMode = context.watch<AirPreferences>().airModeEnabled;
+    final chromeBottom = bottomInset + 12;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFE8EEF2),
+      backgroundColor: WhamiAviation.navy,
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final bodyHeight = constraints.maxHeight;
-          final sheetTop = bodyHeight * _sheetExtent;
-
           return Stack(
             children: [
               Positioned.fill(
@@ -132,7 +276,9 @@ class _MapScreenState extends State<MapScreen> {
               SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  // Leave a clear lane for the right-side map FABs so overlay
+                  // close controls are never covered by layers/GPS buttons.
+                  padding: const EdgeInsets.fromLTRB(14, 8, 72, 0),
                   child: Column(
                     children: [
                       _BrandHeader(onMenu: () => context.push('/settings')),
@@ -142,6 +288,55 @@ class _MapScreenState extends State<MapScreen> {
                           message: repo.alertMessage,
                           onVerify: () => context.go('/verify'),
                           onDismiss: repo.dismissSpoofAlarm,
+                        ),
+                      ],
+                      if (repo.showGhostPin &&
+                          repo.lieDistanceM != null &&
+                          !_lieLineDismissed &&
+                          !repo.flightPlanEditMode &&
+                          !_flightPlanPanelOpen) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Material(
+                            color: const Color(0xFFB71C1C),
+                            borderRadius: BorderRadius.circular(22),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    repo.lieDistanceM! >= 1000
+                                        ? 'Lie line · ${(repo.lieDistanceM! / 1000).toStringAsFixed(1)} km'
+                                        : 'Lie line · ${repo.lieDistanceM!.round()} m',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Dismiss',
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 36,
+                                      minHeight: 36,
+                                    ),
+                                    onPressed: () => setState(
+                                      () => _lieLineDismissed = true,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 18,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                       if (repo.hasRealWorldLock) ...[
@@ -155,7 +350,68 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                       ],
-                      if (airMode) ...[
+                      if (repo.crossfire.visible &&
+                          !_crossfireDismissed &&
+                          !repo.flightPlanEditMode &&
+                          !_flightPlanPanelOpen) ...[
+                        const SizedBox(height: 10),
+                        WitnessCrossfirePanel(
+                          crossfire: repo.crossfire,
+                          onDismiss: () =>
+                              setState(() => _crossfireDismissed = true),
+                        ),
+                      ],
+                      // Compact banner only when placing pins with panel closed
+                      // (panel already has Done / Place controls — don't stack both).
+                      if (repo.flightPlanEditMode && !_flightPlanPanelOpen) ...[
+                        const SizedBox(height: 10),
+                        _RoutePinBanner(
+                          pinCount:
+                              repo.activeFlightPlan?.waypoints.length ?? 0,
+                          onDone: () {
+                            repo.setFlightPlanEditMode(false);
+                            unawaited(repo.saveActiveFlightPlan());
+                          },
+                          onOpenPanel: () =>
+                              setState(() => _flightPlanPanelOpen = true),
+                        ),
+                      ],
+                      if (_flightPlanPanelOpen) ...[
+                        const SizedBox(height: 10),
+                        FlightPlanPanel(
+                          repository: repo,
+                          onClose: () =>
+                              setState(() => _flightPlanPanelOpen = false),
+                        ),
+                      ],
+                      if (_truthPanelOpen) ...[
+                        const SizedBox(height: 10),
+                        TruthModePanel(
+                          repository: repo,
+                          onClose: () =>
+                              setState(() => _truthPanelOpen = false),
+                        ),
+                      ],
+                      if (_meshPanelOpen) ...[
+                        const SizedBox(height: 10),
+                        WitnessMeshPanel(
+                          repository: repo,
+                          onClose: () =>
+                              setState(() => _meshPanelOpen = false),
+                        ),
+                      ],
+                      if (repo.currentAdvisory != null &&
+                          !repo.flightPlanEditMode &&
+                          !_flightPlanPanelOpen &&
+                          !_truthPanelOpen &&
+                          !_meshPanelOpen) ...[
+                        const SizedBox(height: 10),
+                        TrustCopilotStrip(advisory: repo.currentAdvisory!),
+                      ],
+                      // Keep map clear while routing — hide Air strip overlays.
+                      if (airMode &&
+                          !repo.flightPlanEditMode &&
+                          !_flightPlanPanelOpen) ...[
                         const SizedBox(height: 10),
                         GestureDetector(
                           onTap: () => context.push('/air'),
@@ -165,14 +421,94 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                       ],
-                      if (permissionDenied) ...[
+                      if (showLocationServicesBanner) ...[
                         const SizedBox(height: 10),
                         _FrostedCard(
-                          child: StatusPanel.permissionDenied(
-                            title: 'Location permission needed',
-                            message:
-                                'WHAMI needs location access to verify your position.',
-                            onAction: _requestPermission,
+                          child: Stack(
+                            children: [
+                              StatusPanel.failure(
+                                title: 'Location services off',
+                                message:
+                                    'Turn on device location to get a GPS fix. '
+                                    'Sensors (compass, motion, baro) keep working.',
+                                actionLabel: 'Open location settings',
+                                onAction: _openLocationSettings,
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: IconButton(
+                                  tooltip: 'Dismiss',
+                                  onPressed: () => setState(
+                                    () => _locationBannerDismissed = true,
+                                  ),
+                                  icon: const Icon(Icons.close, size: 20),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (permissionDenied && !_permissionBannerDismissed) ...[
+                        const SizedBox(height: 10),
+                        _FrostedCard(
+                          child: Stack(
+                            children: [
+                              StatusPanel.permissionDenied(
+                                title: 'Location permission needed',
+                                message:
+                                    'WHAMI needs location access to verify your position. '
+                                    'Sensors keep working without GPS.',
+                                actionLabel: _permission ==
+                                        LocationPermission.deniedForever
+                                    ? 'Open settings'
+                                    : 'Allow location',
+                                onAction: _requestPermission,
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: IconButton(
+                                  tooltip: 'Dismiss',
+                                  onPressed: () => setState(
+                                    () => _permissionBannerDismissed = true,
+                                  ),
+                                  icon: const Icon(Icons.close, size: 20),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (showWaitingForFix) ...[
+                        const SizedBox(height: 10),
+                        _FrostedCard(
+                          child: Stack(
+                            children: [
+                              StatusPanel.loading(
+                                title: 'Waiting for GPS fix',
+                                message: repo.gpsStatusMessage,
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 48,
+                                child: TextButton(
+                                  onPressed: _retryLocation,
+                                  child: const Text('Retry'),
+                                ),
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: IconButton(
+                                  tooltip: 'Dismiss',
+                                  onPressed: () => setState(
+                                    () => _locationBannerDismissed = true,
+                                  ),
+                                  icon: const Icon(Icons.close, size: 20),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -183,94 +519,157 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
-              Positioned(
-                left: 14,
-                bottom: sheetTop + 72,
-                child: FloatingActionButton.extended(
-                  heroTag: 'timeline',
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.textPrimary,
-                  elevation: 3,
-                  icon: const Icon(Icons.timeline, size: 20),
-                  label: const Text(
-                    'Replay',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                  ),
-                  onPressed: () => context.push('/timeline'),
-                ),
-              ),
-
+              // Unified right toolbar — layers, basemap style, route, GPS, center, replay.
               Positioned(
                 right: 14,
-                bottom: sheetTop + 72,
+                bottom: chromeBottom + 168,
                 child: Column(
                   children: [
-                    MapLayerControl(
-                      layerVisibility: _layerVisibility,
-                      onLayerToggled: (key, visible) {
-                        setState(() => _layerVisibility[key] = visible);
-                      },
-                      lightStyle: true,
-                    ),
-                    const SizedBox(height: 10),
+                    if (!repo.flightPlanEditMode && !_flightPlanPanelOpen) ...[
+                      MapLayerControl(
+                        layerVisibility: _layerVisibility,
+                        onLayerToggled: (key, visible) {
+                          setState(() => _layerVisibility[key] = visible);
+                        },
+                        onOpenMapStyle: () => showMapStyleSheet(
+                          context: context,
+                          current: repo.mapBasemapStyle,
+                          onSelected: repo.setMapBasemapStyle,
+                        ),
+                        mapStyleLabel: repo.mapBasemapStyle.shortLabel,
+                      ),
+                      const SizedBox(height: 10),
+                      _RoundMapButton(
+                        icon: Icons.map_outlined,
+                        tooltip:
+                            'Map style · ${repo.mapBasemapStyle.shortLabel}',
+                        onTap: () => showMapStyleSheet(
+                          context: context,
+                          current: repo.mapBasemapStyle,
+                          onSelected: repo.setMapBasemapStyle,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     _RoundMapButton(
-                      icon: Icons.my_location,
-                      tooltip: 'Recenter',
-                      onTap: _recenter,
+                      icon: Icons.route,
+                      tooltip: repo.flightPlanEditMode
+                          ? 'Placing route pins — tap map'
+                          : 'Plan travel route',
+                      onTap: () {
+                        setState(() {
+                          if (_flightPlanPanelOpen) {
+                            _flightPlanPanelOpen = false;
+                          } else {
+                            _flightPlanPanelOpen = true;
+                            _truthPanelOpen = false;
+                            _meshPanelOpen = false;
+                            if (!repo.flightPlanEditMode) {
+                              repo.beginTravelRoutePlanning();
+                            }
+                            _collapseTrustPanel();
+                          }
+                        });
+                      },
                     ),
+                    if (!repo.flightPlanEditMode && !_flightPlanPanelOpen) ...[
+                      const SizedBox(height: 10),
+                      _RoundMapButton(
+                        icon: Icons.compare_arrows,
+                        tooltip: 'Truth Mode',
+                        onTap: () => setState(() {
+                          _truthPanelOpen = !_truthPanelOpen;
+                          _meshPanelOpen = false;
+                          _collapseTrustPanel();
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                      _RoundMapButton(
+                        icon: Icons.devices,
+                        tooltip: 'Witness Mesh',
+                        onTap: () => setState(() {
+                          _meshPanelOpen = !_meshPanelOpen;
+                          _truthPanelOpen = false;
+                          _collapseTrustPanel();
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                      if (repo.isTracking) ...[
+                        _RoundMapButton(
+                          icon: repo.gpsEnabled
+                              ? Icons.gps_fixed
+                              : Icons.gps_off,
+                          tooltip: repo.gpsEnabled
+                              ? 'Turn GPS off (sensors only)'
+                              : 'Turn GPS on',
+                          onTap: () =>
+                              repo.setGpsEnabled(!repo.gpsEnabled),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      _RoundMapButton(
+                        icon: Icons.my_location,
+                        tooltip: 'Center on GPS',
+                        onTap: _recenter,
+                      ),
+                      const SizedBox(height: 10),
+                      _RoundMapButton(
+                        icon: Icons.timeline,
+                        tooltip: 'Replay',
+                        onTap: () => context.push('/timeline'),
+                      ),
+                    ],
                   ],
                 ),
               ),
 
-              // TRACKING LIVE — map-body height × sheet extent (not full screen %).
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: sheetTop + 8,
-                child: Center(
-                  child: repo.isTracking
-                      ? _TrackingLivePill(
-                          onTap: () => repo.toggleTracking(),
-                        )
-                      : _StartTrackingPill(
-                          onTap: () {
-                            repo.toggleTracking();
-                            _checkPermission();
-                          },
+              // GNSS HUD + compact trust — ~70% map stays clear.
+              if (!repo.flightPlanEditMode && !_flightPlanPanelOpen)
+                Positioned(
+                  left: 14,
+                  right: 72,
+                  bottom: chromeBottom,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: CompactTrustPanel(
+                          summary: summary,
+                          opinions: opinions,
+                          expanded: _trustExpanded,
+                          onToggle: () => setState(
+                            () => _trustExpanded = !_trustExpanded,
+                          ),
+                          onOpenVerify: () => context.go('/verify'),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.center,
+                        child: MapGpsHud(
+                          reading: repo.liveGpsReading,
+                          gpsEnabled: repo.gpsEnabled,
+                          isTracking: repo.isTracking,
+                          expanded: _hudExpanded,
+                          onToggleExpand: () => setState(
+                            () => _hudExpanded = !_hudExpanded,
+                          ),
+                          onStopTracking: repo.isTracking
+                              ? () => repo.toggleTracking()
+                              : null,
+                          onStartTracking: !repo.isTracking
+                              ? () {
+                                  repo.toggleTracking();
+                                  _checkPermission();
+                                }
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-
-              NotificationListener<DraggableScrollableNotification>(
-                onNotification: (notification) {
-                  final size = notification.extent;
-                  if ((size - _sheetExtent).abs() >= 0.002) {
-                    setState(() => _sheetExtent = size);
-                  }
-                  return false;
-                },
-                child: DraggableScrollableSheet(
-                  controller: _sheetController,
-                  initialChildSize: _sheetInitial,
-                  minChildSize: _sheetMin,
-                  maxChildSize: _sheetMax,
-                  builder: (context, scrollController) {
-                    return _TrustCard(
-                      scrollController: scrollController,
-                      summary: summary,
-                      opinions: opinions,
-                      detailsExpanded: _detailsExpanded,
-                      bottomInset: bottomInset,
-                      onToggleDetails: () {
-                        setState(
-                          () => _detailsExpanded = !_detailsExpanded,
-                        );
-                      },
-                      onOpenVerify: () => context.go('/verify'),
-                    );
-                  },
-                ),
-              ),
             ],
           );
         },
@@ -287,69 +686,80 @@ class _BrandHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Match reference: logo tile (left) + tagline beside it + dark menu (right).
-    // Not one combined white app-bar card.
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 52,
-          height: 52,
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.10),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: WhamiAviation.navy.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
-          child: Image.asset(
-            'assets/images/app_icon.png',
-            fit: BoxFit.contain,
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Image.asset(
+              'assets/images/app_icon.png',
+              fit: BoxFit.contain,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        const Expanded(
-          child: Text(
-            'Verified by the real world.',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF5A6570),
-              height: 1.25,
-              shadows: [
-                Shadow(
-                  color: Color(0x66FFFFFF),
-                  blurRadius: 6,
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'WHAMI',
+                  style: TextStyle(
+                    color: WhamiAviation.cyan,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                Text(
+                  'Verified by the real world.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    height: 1.2,
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-        Semantics(
-          label: 'Diagnostics and settings',
-          button: true,
-          child: Material(
-            color: AppColors.headerBg,
-            shape: const CircleBorder(),
-            elevation: 3,
-            shadowColor: Colors.black38,
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onMenu,
-              child: const SizedBox(
-                width: 44,
-                height: 44,
-                child: Icon(Icons.more_horiz, color: Colors.white, size: 22),
+          Semantics(
+            label: 'Diagnostics and settings',
+            button: true,
+            child: Material(
+              color: Colors.white.withValues(alpha: 0.10),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onMenu,
+                child: const SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: Icon(Icons.more_horiz, color: Colors.white, size: 22),
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -360,10 +770,20 @@ class _FrostedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.95),
-      borderRadius: BorderRadius.circular(16),
-      elevation: 2,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x140A1628)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
       child: child,
     );
   }
@@ -382,62 +802,33 @@ class _RoundMapButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      elevation: 3,
-      shadowColor: Colors.black26,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
+    final size = WhamiLayout.mapFabSize(context);
+    final iconSize = WhamiLayout.mapFabIcon(context);
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 0,
         borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Tooltip(
-          message: tooltip,
-          child: SizedBox(
-            width: 48,
-            height: 48,
-            child: Icon(icon, color: AppColors.headerBg, size: 22),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TrackingLivePill extends StatelessWidget {
-  final VoidCallback onTap;
-  const _TrackingLivePill({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Tracking live. Tap to stop.',
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        elevation: 4,
-        shadowColor: Colors.black26,
         child: InkWell(
+          borderRadius: BorderRadius.circular(14),
           onTap: onTap,
-          borderRadius: BorderRadius.circular(24),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.circle, size: 9, color: AppColors.trustHigh),
-                SizedBox(width: 8),
-                Text(
-                  'TRACKING LIVE',
-                  style: TextStyle(
-                    color: AppColors.headerBg,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                    letterSpacing: 0.7,
-                  ),
+          child: Ink(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: WhamiAviation.charcoal.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
+            child: Icon(icon, color: WhamiAviation.cyan, size: iconSize),
           ),
         ),
       ),
@@ -445,349 +836,107 @@ class _TrackingLivePill extends StatelessWidget {
   }
 }
 
-class _StartTrackingPill extends StatelessWidget {
-  final VoidCallback onTap;
-  const _StartTrackingPill({required this.onTap});
+/// Live banner while placing pins ahead on the travel route.
+class _RoutePinBanner extends StatelessWidget {
+  final int pinCount;
+  final VoidCallback onDone;
+  final VoidCallback onOpenPanel;
 
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Start tracking',
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        elevation: 4,
-        shadowColor: Colors.black26,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(24),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.play_arrow, color: AppColors.headerBg, size: 20),
-                SizedBox(width: 6),
-                Text(
-                  'START TRACKING',
-                  style: TextStyle(
-                    color: AppColors.headerBg,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                    letterSpacing: 0.7,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Trust bottom card ────────────────────────────────────────────────────────
-
-class _TrustCard extends StatelessWidget {
-  final ScrollController scrollController;
-  final TrustSummary summary;
-  final List<PositionOpinion> opinions;
-  final bool detailsExpanded;
-  final double bottomInset;
-  final VoidCallback onToggleDetails;
-  final VoidCallback onOpenVerify;
-
-  const _TrustCard({
-    required this.scrollController,
-    required this.summary,
-    required this.opinions,
-    required this.detailsExpanded,
-    required this.bottomInset,
-    required this.onToggleDetails,
-    required this.onOpenVerify,
+  const _RoutePinBanner({
+    required this.pinCount,
+    required this.onDone,
+    required this.onOpenPanel,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = summary.level.color;
-    final active = opinions.where((o) => o.status != 'unavailable').toList();
+    final hint = pinCount == 0
+        ? 'Tap the map to set Origin'
+        : pinCount == 1
+            ? 'Tap ahead for the next waypoint'
+            : '$pinCount pins set · tap for Destination';
 
     return Material(
-      elevation: 16,
-      shadowColor: Colors.black38,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-      color: Colors.white,
-      child: ListView(
-        controller: scrollController,
-        padding: EdgeInsets.fromLTRB(18, 10, 18, 16 + bottomInset),
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFDDE3EA),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
           ),
-
-          // Glanceable status row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF1565C0).withValues(alpha: 0.35),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+          child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 10,
+                height: 10,
                 decoration: BoxDecoration(
-                  color: color,
+                  color: const Color(0xFF4FC3F7),
                   shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  summary.level == TrustLevel.reliable
-                      ? Icons.check
-                      : summary.level.icon,
-                  color: Colors.white,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      summary.headline,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.headerBg,
-                        height: 1.15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      summary.subtitle,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                        height: 1.25,
-                      ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF4FC3F7).withValues(alpha: 0.7),
+                      blurRadius: 8,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Semantics(
-                label: 'Overall score ${summary.score} of 100',
-                child: RichText(
-                  textAlign: TextAlign.right,
-                  text: TextSpan(
+              const SizedBox(width: 10),
+              Expanded(
+                child: GestureDetector(
+                  onTap: onOpenPanel,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextSpan(
-                        text: '${summary.score}',
+                      const Text(
+                        'ROUTING',
                         style: TextStyle(
-                          fontSize: 28,
+                          color: Colors.white70,
                           fontWeight: FontWeight.w800,
-                          color: color,
-                          height: 1,
+                          fontSize: 9,
+                          letterSpacing: 0.8,
                         ),
                       ),
-                      TextSpan(
-                        text: ' / 100',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: color.withValues(alpha: 0.75),
+                      Text(
+                        hint,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
+              TextButton(
+                onPressed: onDone,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.white.withValues(alpha: 0.14),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: const Text(
+                  'Done',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
             ],
           ),
-
-          const SizedBox(height: 8),
-          Text(
-            summary.explanation,
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-              height: 1.4,
-            ),
-          ),
-
-          if (summary.level == TrustLevel.caution ||
-              summary.level == TrustLevel.unreliable) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 44,
-              child: OutlinedButton(
-                onPressed: onOpenVerify,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: color,
-                  side: BorderSide(color: color),
-                ),
-                child: Text(
-                  summary.level == TrustLevel.caution
-                      ? 'Open Verify'
-                      : 'Verify or get offline pack',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 6),
-          InkWell(
-            onTap: onToggleDetails,
-            borderRadius: BorderRadius.circular(10),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  const Text(
-                    'Verification sources',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.headerBg,
-                    ),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    detailsExpanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
-                    color: AppColors.textSecondary,
-                    size: 26,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          if (detailsExpanded) ...[
-            if (active.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Start tracking to collect GPS, landmark, and motion witnesses.',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                ),
-              )
-            else
-              ...active.map((op) => _SourceRow(opinion: op)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SourceRow extends StatelessWidget {
-  final PositionOpinion opinion;
-  const _SourceRow({required this.opinion});
-
-  IconData get _icon {
-    switch (opinion.sourceType) {
-      case 'gps':
-        return Icons.satellite_alt;
-      case 'landmark':
-        return Icons.location_on;
-      case 'imu':
-        return Icons.directions_walk;
-      case 'magnetic':
-        return Icons.explore;
-      case 'sextant':
-        return Icons.wb_sunny_outlined;
-      default:
-        return Icons.shield_outlined;
-    }
-  }
-
-  String get _title {
-    switch (opinion.sourceType) {
-      case 'gps':
-        return 'GPS';
-      case 'landmark':
-        return 'Landmark';
-      case 'imu':
-        return 'Motion';
-      case 'magnetic':
-        return 'Magnetic';
-      case 'sextant':
-        return 'Sky';
-      default:
-        return opinion.name;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final unstable = opinion.status == 'unstable';
-    final verifyOnly = opinion.status == 'verify';
-    final scoreColor = unstable || verifyOnly
-        ? AppColors.trustMediumDark
-        : AppColors.forTrust(opinion.confidence);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F3F6),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(_icon, size: 18, color: AppColors.headerBg),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.headerBg,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  opinion.description.isEmpty
-                      ? (unstable
-                          ? 'Unstable'
-                          : verifyOnly
-                              ? 'Verify only'
-                              : 'Active')
-                      : opinion.description,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${opinion.confidence}%',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: scoreColor,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

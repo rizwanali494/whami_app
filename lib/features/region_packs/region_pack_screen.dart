@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/theme/whami_aviation.dart';
+import '../../core/widgets/whami_chrome.dart';
 import '../../data/models/region_pack.dart';
 import '../../data/repositories/whami_repository.dart';
 import 'widgets/region_pack_card.dart';
@@ -20,6 +22,8 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
 
   static const _typeFilters = [
     'All',
+    'Aviation',
+    'Urban',
     'Marine',
     'Hiking',
     'Lake',
@@ -27,7 +31,6 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
     'Island',
     'Desert',
     'Arctic',
-    'Urban',
   ];
 
   void _refresh() => setState(() {});
@@ -73,47 +76,49 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
       filtered.insert(0, ap);
     }
 
+    final pad = WhamiLayout.pagePad(context);
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: WhamiAviation.lightWash,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            backgroundColor: AppColors.headerBg,
+            backgroundColor: WhamiAviation.navy,
             pinned: true,
-            title: const Text(
-              'Offline',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+            expandedHeight: 72,
+            title: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'OFFLINE',
+                  style: TextStyle(
+                    color: WhamiAviation.cyan,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                Text(
+                  'Regional packs',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
             ),
             actions: [
               if (activePack != null)
                 Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: Chip(
-                    backgroundColor: AppColors.trustHigh.withValues(
-                      alpha: 0.18,
+                  padding: EdgeInsets.only(right: pad),
+                  child: Center(
+                    child: WhamiStatusPill(
+                      label: activePack.isDemoPack
+                          ? 'Demo · ${activePack.name}'
+                          : activePack.name,
+                      color: WhamiAviation.success,
                     ),
-                    avatar: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: AppColors.trustHigh,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    label: Text(
-                      activePack.name,
-                      style: const TextStyle(
-                        color: AppColors.trustHigh,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
                   ),
                 ),
             ],
@@ -123,44 +128,115 @@ class _RegionPackScreenState extends State<RegionPackScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Moat explanation
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.headerBg,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
+                if (widget.repository.missionPacks.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(pad, 16, pad, 0),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.lock,
-                          color: AppColors.whami,
-                          size: 20,
+                        const Text(
+                          'ONE-TAP MISSIONS',
+                          style: TextStyle(
+                            color: WhamiAviation.cyan,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                            letterSpacing: 1.1,
+                          ),
                         ),
-                        const SizedBox(width: 10),
-                        const Expanded(
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 108,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: widget.repository.missionPacks.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 10),
+                            itemBuilder: (context, i) {
+                              final p = widget.repository.missionPacks[i];
+                              return InkWell(
+                                onTap: () =>
+                                    widget.repository.launchMissionPack(p),
+                                borderRadius: BorderRadius.circular(14),
+                                child: Ink(
+                                  width: 168,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: WhamiAviation.glassPanel(
+                                    radius: BorderRadius.circular(14),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        p.missionProfile.toUpperCase(),
+                                        style: WhamiAviation.overline(
+                                          color: WhamiAviation.cyan,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        p.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        p.status == 'downloaded' ||
+                                                p.checksum == 'bundled-demo'
+                                            ? 'TAP TO LAUNCH'
+                                            : 'TAP TO DOWNLOAD',
+                                        style: WhamiAviation.overline(
+                                          color: WhamiAviation.amber,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(pad, 16, pad, 0),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: WhamiAviation.glassPanel(
+                      radius: BorderRadius.circular(14),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.layers_outlined,
+                            color: WhamiAviation.cyan, size: 20),
+                        SizedBox(width: 10),
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "WHAMI's Data Moat",
+                                'Offline coverage',
                                 style: TextStyle(
                                   color: Colors.white,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w800,
                                   fontSize: 13,
                                 ),
                               ),
                               SizedBox(height: 4),
                               Text(
-                                'Region packs include offline maps, landmarks, magnetic baselines, '
-                                'celestial tables, and route trust history — all verified and stored '
-                                'locally. No internet required during navigation.',
+                                'Full packs ship offline map tiles + landmarks. '
+                                'Demo packs provide landmarks only — the basemap '
+                                'stays online or from tile cache.',
                                 style: TextStyle(
-                                  color: Color(0xFF90A4AE),
-                                  fontSize: 11,
+                                  color: WhamiAviation.textSecondary,
+                                  fontSize: 12,
                                   height: 1.4,
                                 ),
                               ),

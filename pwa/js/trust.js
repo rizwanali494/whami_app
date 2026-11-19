@@ -45,6 +45,20 @@ const Trust = (() => {
       bounds: [25.66764, -106.9125, 36.52618, -93.01897],
       landmarks: [{ name: "Texas Capitol", lat: 30.2747, lng: -97.7404 }],
     },
+    {
+      id: "aus_victoria_nsw",
+      name: "Victoria / NSW Riverina",
+      country: "Australia",
+      type: "Aviation",
+      size: "Demo",
+      bounds: [-37.5, 143.5, -34.5, 148.5],
+      landmarks: [
+        { name: "Tocumwal Aerodrome", lat: -35.8117, lng: 145.6083 },
+        { name: "Finley Township", lat: -35.644, lng: 145.578 },
+        { name: "Cobram Bridge", lat: -35.92, lng: 145.648 },
+        { name: "Yarrawonga Aerodrome", lat: -36.0289, lng: 146.0289 },
+      ],
+    },
   ];
 
   function haversine(aLat, aLng, bLat, bLng) {
@@ -86,10 +100,10 @@ const Trust = (() => {
 
   function explanation(level, score) {
     return {
-      reliable: `Score ${score} means most witnesses agree. You can navigate with this fix.`,
+      reliable: `Score ${score} means most sensors agree. You can navigate with this fix.`,
       caution: `Score ${score} means sources partially disagree. Prefer open sky or verify a landmark.`,
       unreliable: `Score ${score} means sources conflict or are missing. Do not rely on this position alone.`,
-      unknown: "WHAMI is still gathering sensor and offline witnesses.",
+      unknown: "WHAMI is still gathering sensors and offline data.",
     }[level];
   }
 
@@ -247,7 +261,7 @@ const Trust = (() => {
       }
       if (maxDisc > 500) {
         gnssSuspicious = true;
-        alertMessage = `GPS suspicious — don't trust this pin. GPS differs from witnesses by ${Math.round(maxDisc)} m.`;
+        alertMessage = `GPS suspicious — don't trust this pin. GPS differs from sensors by ${Math.round(maxDisc)} m.`;
         alertSeverity = "critical";
         if (!broken.includes("GPS")) broken.push("GPS");
       }
@@ -287,6 +301,27 @@ const Trust = (() => {
       alertMessage = "GPS suspicious — don't trust this pin.";
     }
 
+    let gpsClaimLat = null;
+    let gpsClaimLng = null;
+    let trustedLat = gps?.lat ?? lock?.lat ?? lastTrusted?.lat ?? null;
+    let trustedLng = gps?.lng ?? lock?.lng ?? lastTrusted?.lng ?? null;
+    let lieDistanceM = null;
+
+    if (gnssSuspicious && gps) {
+      gpsClaimLat = gps.lat;
+      gpsClaimLng = gps.lng;
+      if (lock?.lat != null) {
+        trustedLat = lock.lat;
+        trustedLng = lock.lng;
+      } else if (lastTrusted?.lat != null) {
+        trustedLat = lastTrusted.lat;
+        trustedLng = lastTrusted.lng;
+      }
+      if (trustedLat != null && trustedLng != null) {
+        lieDistanceM = haversine(trustedLat, trustedLng, gps.lat, gps.lng);
+      }
+    }
+
     return {
       score,
       level,
@@ -308,7 +343,85 @@ const Trust = (() => {
       alertMessage,
       alertSeverity,
       broken: [...new Set(broken)],
+      gpsClaimLat,
+      gpsClaimLng,
+      trustedLat,
+      trustedLng,
+      lieDistanceM,
+      showGhostPin:
+        Boolean(gnssSuspicious && gpsClaimLat != null && trustedLat != null && lieDistanceM != null && lieDistanceM > 50),
+      crossfire: buildCrossfire({
+        opinions,
+        trustedLat: trustedLat ?? gps?.lat,
+        trustedLng: trustedLng ?? gps?.lng,
+        score,
+        gnssSuspicious,
+        tracking: state.tracking,
+      }),
     };
+  }
+
+  function buildCrossfire({ opinions, trustedLat, trustedLng, score, gnssSuspicious, tracking }) {
+    if (!tracking || trustedLat == null || trustedLng == null) {
+      return { visible: false, headline: "", witnesses: [] };
+    }
+    if (score >= 75 && !gnssSuspicious) {
+      return { visible: false, headline: "", witnesses: [] };
+    }
+    const candidates = opinions.filter(
+      (o) => o.status !== "unavailable" && o.lat != null && o.lng != null,
+    );
+    if (candidates.length < 2) {
+      return { visible: false, headline: "", witnesses: [] };
+    }
+    const agreeR = 120;
+    const outlierR = 250;
+    const witnesses = [];
+    let agreeN = 0;
+    let outlierCodes = [];
+    let gpsOut = false;
+    for (const o of candidates) {
+      const dist = haversine(trustedLat, trustedLng, o.lat, o.lng);
+      const weak = o.status === "unstable" || o.confidence < 55;
+      const far = dist > outlierR;
+      const near = dist <= agreeR && !weak;
+      const isOutlier = weak || far || (o.sourceType === "gps" && gnssSuspicious);
+      const agrees = near && !isOutlier;
+      if (agrees) agreeN++;
+      if (isOutlier) {
+        outlierCodes.push(o.name === "GPS" || o.sourceType === "gps" ? "G" : (o.name || "?").slice(0, 1).toUpperCase());
+        if (o.sourceType === "gps") gpsOut = true;
+      }
+      const code =
+        { gps: "G", landmark: "L", magnetic: "M", imu: "I", sextant: "S" }[o.sourceType] || "?";
+      witnesses.push({
+        id: o.sourceType,
+        name: o.name,
+        shortCode: code,
+        lat: o.lat,
+        lng: o.lng,
+        confidence: o.confidence,
+        agrees,
+        isOutlier,
+        distanceFromTrustedM: dist,
+        why:
+          o.description ||
+          (isOutlier
+            ? far
+              ? `Claims a fix ${Math.round(dist)} m from trusted reality.`
+              : "Signal unstable or low confidence."
+            : `Aligned with trusted reality (±${Math.round(dist)} m).`),
+      });
+    }
+    let headline;
+    if (agreeN > 0 && gpsOut && outlierCodes.length === 1) {
+      headline = `${agreeN} sensor${agreeN === 1 ? "" : "s"} agree. GPS is the outlier.`;
+    } else if (agreeN > 0 && outlierCodes.length) {
+      headline = `${agreeN} agree. Outliers: ${[...new Set(outlierCodes)].slice(0, 3).join(" · ")}.`;
+    } else {
+      headline = `Sensors disagree — ${outlierCodes.length} weak or far from reality.`;
+    }
+    return { visible: true, headline, witnesses, trustedLat, trustedLng };
   }
 
   return { CATALOG, haversine, fuse, packFor, inBounds, colorFor, levelFor };

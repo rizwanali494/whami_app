@@ -40,6 +40,43 @@ void main() {
     );
     expect(fused.gnssSuspicious, isTrue);
     expect(fused.alertMessage.toLowerCase(), contains('don\'t trust this pin'));
+    expect(fused.gpsClaimLatitude, closeTo(37.79, 0.0001));
+    expect(fused.gpsClaimLongitude, closeTo(-122.40, 0.0001));
+    expect(fused.latitude, closeTo(37.7749, 0.0001));
+    expect(fused.lieDistanceM, greaterThan(50));
+  });
+
+  test('continental jump is region change, not spoof lie line', () {
+    // SF last fix → Tocumwal AU GPS (~14,000 km)
+    final fused = engine.compute(
+      gps: gps(lat: -35.81, lng: 145.56, speed: 0),
+      magnetometer: null,
+      imu: null,
+      barometer: null,
+      sky: null,
+      landmarkMatch: null,
+      magneticMatch: null,
+      seamapMatch: null,
+      hasOfflineData: false,
+      lastTrustedLat: 37.7749,
+      lastTrustedLng: -122.4194,
+      landmarkAnchorLat: 37.7955,
+      landmarkAnchorLng: -122.3937,
+      landmarkAnchorName: 'Ferry Building',
+    );
+    expect(fused.gnssSuspicious, isFalse);
+    expect(fused.gpsClaimLatitude, isNull);
+    expect(fused.lieDistanceM, isNull);
+    expect(fused.latitude, closeTo(-35.81, 0.01));
+    expect(
+      TrustFusionEngine.isStaleRegionLock(
+        lockLat: 37.7955,
+        lockLng: -122.3937,
+        gpsLat: -35.81,
+        gpsLng: 145.56,
+      ),
+      isTrue,
+    );
   });
 
   test('locked landmark far from GPS flags spoof', () {
@@ -64,6 +101,8 @@ void main() {
         fused.opinions.firstWhere((o) => o.sourceType == 'landmark');
     expect(landmark.description, contains('Locked to real world'));
     expect(landmark.latitude, closeTo(37.7955, 0.0001));
+    expect(fused.latitude, closeTo(37.7955, 0.0001));
+    expect(fused.gpsClaimLatitude, closeTo(37.80, 0.0001));
   });
 
   test('timeline recorder keeps a ring buffer', () {

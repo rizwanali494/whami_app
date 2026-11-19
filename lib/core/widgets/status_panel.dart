@@ -32,13 +32,14 @@ class StatusPanel extends StatelessWidget {
   factory StatusPanel.permissionDenied({
     required String title,
     required String message,
+    String? actionLabel,
     VoidCallback? onAction,
   }) {
     return StatusPanel(
       icon: Icons.lock_outline,
       title: title,
       message: message,
-      actionLabel: 'Open settings',
+      actionLabel: actionLabel ?? 'Allow',
       onAction: onAction,
       accent: AppColors.alertWarningBorder,
     );

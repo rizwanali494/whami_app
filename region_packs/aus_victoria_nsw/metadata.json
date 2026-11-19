@@ -1,0 +1,30 @@
+{
+  "id": "aus_victoria_nsw",
+  "name": "Victoria / NSW Riverina",
+  "country": "Australia",
+  "packType": "Aviation",
+  "type": "Aviation",
+  "trustScore": 85,
+  "description": "Demo pack for Tocumwal / Riverina pilots \u2014 landmarks around YTOC, Finley, Cobram, Yarrawonga.",
+  "bounds": [
+    -37.5,
+    143.5,
+    -34.5,
+    148.5
+  ],
+  "checksum": "bundled-demo",
+  "size": 32768,
+  "created": "2026-04-12",
+  "createdAt": "2026-04-12",
+  "versions": {
+    "engine": "2.0.0",
+    "schema": "1.0.0",
+    "data": "2026.04",
+    "map": "1.0.0-stub",
+    "landmarks": "1.0.0",
+    "magnetic": "1.0.0"
+  },
+  "mapFile": "map.mbtiles",
+  "landmarkFile": "landmarks.sqlite",
+  "schemaVersion": 1
+}

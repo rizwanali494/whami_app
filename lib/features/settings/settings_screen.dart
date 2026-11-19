@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_version.dart';
 import '../../core/constants/connectivity_status.dart';
 import '../../core/preferences/app_preferences.dart';
+import '../../core/theme/whami_aviation.dart';
 import '../../core/trust/trust_summary.dart';
 import '../../core/widgets/status_panel.dart';
 import '../../data/repositories/whami_repository.dart';
@@ -168,11 +169,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     return Scaffold(
+      backgroundColor: WhamiAviation.lightWash,
       body: CustomScrollView(
         slivers: [
-          SliverAppBar(
+          const SliverAppBar(
             pinned: true,
-            title: const Text('Diagnostics & Settings'),
+            backgroundColor: WhamiAviation.navy,
+            foregroundColor: Colors.white,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SETTINGS',
+                  style: TextStyle(
+                    color: WhamiAviation.cyan,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                Text(
+                  'Diagnostics & preferences',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
           ),
           SliverToBoxAdapter(
             child: Column(
@@ -383,7 +408,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        '"GPS is only one witness."',
+                        '"GPS is only one sensor."',
                         style: TextStyle(
                           fontSize: 13,
                           color: AppColors.textSecondary,

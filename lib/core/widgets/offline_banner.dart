@@ -18,17 +18,29 @@ class OfflineBanner extends StatelessWidget {
         final activePack = repository.getRegionPackById(repository.activePackId);
         final activePackName = activePack?.name ?? 'No Pack';
         final hasPack = activePack != null && activePack.status == 'downloaded';
+        final activatingId = repository.activatingPackId;
+        final activatingPack = activatingId == null
+            ? null
+            : repository.getRegionPackById(activatingId);
 
         Color bg;
         Color text;
         String message;
         IconData icon;
 
+        if (activatingPack != null) {
+          bg = AppColors.gps.withValues(alpha: 0.95);
+          text = Colors.white;
+          message = 'Activating · ${activatingPack.name}…';
+          icon = Icons.hourglass_top;
+        } else {
         switch (mode) {
           case ConnectivityMode.online:
             bg = AppColors.trustHigh.withValues(alpha: 0.9);
             text = Colors.white;
-            message = 'Online · $activePackName Loaded · All Sources Active';
+            message = hasPack
+                ? 'Online · $activePackName Loaded · All Sources Active'
+                : 'Online · No Pack Loaded · All Sources Active';
             icon = Icons.wifi;
             break;
           case ConnectivityMode.offline:
@@ -43,6 +55,7 @@ class OfflineBanner extends StatelessWidget {
             message = 'LIMITED · GPS Only · Download Region Pack For Full Trust';
             icon = Icons.signal_cellular_connected_no_internet_4_bar_rounded;
             break;
+        }
         }
 
         return InkWell(
@@ -124,7 +137,7 @@ class OfflineBanner extends StatelessWidget {
                 const SizedBox(height: 8),
                 _buildStatusRow(
                   context,
-                  title: 'GPS Witness Layer',
+                  title: 'GPS Sensor Layer',
                   subtitle: 'Satellite positioning coordinates status.',
                   isActive: true,
                   badgeText: 'Active',

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
+import '../../core/theme/whami_aviation.dart';
 import '../../data/repositories/whami_repository.dart';
 import 'landmark_scan_screen.dart';
 import 'arcore_scan_screen.dart';
@@ -14,26 +14,42 @@ class ScanScreen extends StatelessWidget {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: WhamiAviation.navy,
         appBar: AppBar(
-          backgroundColor: AppColors.headerBg,
+          backgroundColor: WhamiAviation.navy,
+          elevation: 0,
           automaticallyImplyLeading: false,
-          title: const Text(
-            'Verify',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
+          title: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'VERIFY',
+                style: TextStyle(
+                  color: WhamiAviation.cyan,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              Text(
+                'Lock to the real world',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+            ],
           ),
-          bottom: TabBar(
-            labelColor: AppColors.whami,
-            unselectedLabelColor: const Color(0xFF78909C),
-            indicatorColor: AppColors.whami,
-            indicatorWeight: 2,
-            tabs: const [
+          bottom: const TabBar(
+            labelColor: WhamiAviation.cyan,
+            unselectedLabelColor: WhamiAviation.textMuted,
+            indicatorColor: WhamiAviation.cyan,
+            indicatorWeight: 2.5,
+            tabs: [
               Tab(
                 icon: Icon(Icons.document_scanner, size: 18),
-                text: 'Landmark Scan',
+                text: 'Landmark',
               ),
               Tab(
                 icon: Icon(Icons.view_in_ar, size: 18),

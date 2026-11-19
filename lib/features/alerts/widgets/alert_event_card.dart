@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/whami_aviation.dart';
 import '../../../data/models/trust_event.dart';
 
 class AlertEventCard extends StatelessWidget {
@@ -77,8 +78,15 @@ class AlertEventCard extends StatelessWidget {
     final bg = _severityBg(event.severity);
     final actionable = event.severity == 'warning' || event.severity == 'critical';
 
+    final pad = WhamiLayout.pagePad(context);
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      margin: EdgeInsets.symmetric(horizontal: pad, vertical: 6),
+      color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: color.withValues(alpha: 0.25)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(

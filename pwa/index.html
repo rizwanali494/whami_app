@@ -13,7 +13,7 @@
   <link rel="icon" href="./favicon.png">
   <link rel="apple-touch-icon" href="./icons/Icon-192.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./css/app.css?v=12">
+  <link rel="stylesheet" href="./css/app.css?v=14">
 </head>
 <body>
   <div class="app">
@@ -42,7 +42,7 @@
             <div class="onboarding-icon">
               <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 4l12 6v10c0 8-5 13-12 16C13 33 8 28 8 20V10z"/><path d="M14 20l4 4 8-8"/></svg>
             </div>
-            <h3>Multiple witnesses</h3>
+            <h3>Multiple sensors</h3>
             <p>GPS, landmarks, magnetic field, motion, and sky vote on your position.</p>
           </article>
           <article class="onboarding-slide hidden">
@@ -79,7 +79,7 @@
       <div id="map-notice" class="notice hidden"></div>
       <div id="spoof-banner" class="spoof-banner hidden" role="alert">
         <strong id="spoof-title">GPS SUSPICIOUS — DON'T TRUST THIS PIN</strong>
-        <p id="spoof-body">GPS jumped without matching witnesses.</p>
+        <p id="spoof-body">GPS jumped without matching sensors.</p>
         <div class="spoof-actions">
           <button type="button" id="spoof-verify">Lock to Real World</button>
           <button type="button" class="ghost" id="spoof-dismiss">Dismiss</button>
@@ -89,6 +89,7 @@
         <span id="lock-chip-label">Locked</span>
         <button type="button" id="lock-unlock" aria-label="Unlock">×</button>
       </div>
+      <div id="crossfire-panel" class="crossfire-panel hidden"></div>
       <div class="map-fabs left">
         <button class="fab text-fab" id="replay-btn" type="button" aria-label="Trust timeline replay">Replay</button>
       </div>
@@ -181,7 +182,10 @@
           <svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2"><path d="M13 5L7 10l6 5"/></svg>
         </button>
         <h1>Trust Timeline</h1>
-        <button class="link-btn" id="timeline-clear" type="button">Clear</button>
+        <div>
+          <button class="link-btn" id="timeline-export" type="button">Export</button>
+          <button class="link-btn" id="timeline-clear" type="button">Clear</button>
+        </div>
       </header>
       <div class="screen-body page-pad">
         <div id="timeline-empty" class="card">
@@ -194,7 +198,8 @@
             <strong id="timeline-level">Reliable</strong>
             <span id="timeline-score">0</span>
           </div>
-          <p id="timeline-broken" class="muted">All witnesses agreeing</p>
+          <p id="timeline-broken" class="muted">All sensors agreeing</p>
+          <div id="timeline-ghost" class="card hidden" style="margin:10px 0"></div>
           <p id="timeline-coords" class="muted">—</p>
           <p id="timeline-time" class="muted">—</p>
           <input id="timeline-scrub" type="range" min="0" max="0" value="0" aria-label="Scrub timeline">
@@ -232,8 +237,8 @@
           </div>
           <div class="setting">
             <h3>About</h3>
-            <p id="settings-version">WHAMI PWA v2.1.0</p>
-            <p>Includes spoof alarm, Trust Timeline Replay, and Lock to Real World. Browser sensors still cannot match native barometer or MBTiles packs.</p>
+            <p id="settings-version">WHAMI PWA v2.2.0</p>
+            <p>Includes Ghost Pin, spoof alarm, Trust Timeline, Evidence Pack, Lock to Real World, and coastline/runway snap.</p>
           </div>
         </article>
       </div>
@@ -269,10 +274,10 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="./js/storage.js?v=7"></script>
-  <script src="./js/trust.js?v=7"></script>
-  <script src="./js/sensors.js?v=7"></script>
-  <script src="./js/map.js?v=7"></script>
-  <script src="./js/app.js?v=11"></script>
+  <script src="./js/storage.js?v=9"></script>
+  <script src="./js/trust.js?v=9"></script>
+  <script src="./js/sensors.js?v=9"></script>
+  <script src="./js/map.js?v=9"></script>
+  <script src="./js/app.js?v=13"></script>
 </body>
 </html>

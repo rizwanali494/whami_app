@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/whami_aviation.dart';
+import '../../../core/widgets/whami_chrome.dart';
 import '../../../data/models/region_pack.dart';
 import '../../../data/repositories/whami_repository.dart';
 
@@ -23,6 +25,8 @@ class RegionPackCard extends StatelessWidget {
         return AppColors.magnetic;
       case 'Urban':
         return AppColors.imu;
+      case 'Aviation':
+        return WhamiAviation.cyan;
       case 'River':
         return const Color(0xFF00ACC1);
       case 'Island':
@@ -40,45 +44,45 @@ class RegionPackCard extends StatelessWidget {
     final isFailed = pack.downloadStage.startsWith('Failed:');
     if (pack.status == 'downloading') {
       final stage = pack.downloadStage.isEmpty
-          ? 'Downloading...'
+          ? 'Downloading…'
           : pack.downloadStage;
-      return SizedBox(
-        width: double.infinity,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    stage,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
+      final pct = (pack.downloadProgress * 100).clamp(0, 100).round();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  stage,
+                  style: WhamiAviation.body(color: WhamiAviation.lightMuted),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  color: AppColors.textSecondary,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => repository.cancelDownload(pack.id),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: pack.downloadProgress,
-                backgroundColor: AppColors.divider,
-                valueColor: AlwaysStoppedAnimation<Color>(typeColor),
-                minHeight: 6,
               ),
+              Text(
+                '$pct%',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: WhamiAviation.lightInk,
+                  fontSize: 12,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                color: WhamiAviation.lightMuted,
+                onPressed: () => repository.cancelDownload(pack.id),
+              ),
+            ],
+          ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pack.downloadProgress,
+              backgroundColor: WhamiAviation.lightBorder,
+              valueColor: AlwaysStoppedAnimation<Color>(typeColor),
+              minHeight: 5,
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
@@ -88,26 +92,33 @@ class RegionPackCard extends StatelessWidget {
         children: [
           if (isFailed)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.only(bottom: 8),
               child: Text(
                 pack.downloadStage,
-                style: const TextStyle(fontSize: 11, color: AppColors.gps),
+                style: const TextStyle(fontSize: 12, color: WhamiAviation.danger),
               ),
             ),
           SizedBox(
             width: double.infinity,
+            height: 46,
             child: OutlinedButton.icon(
               onPressed: () => repository.startDownload(pack.id),
-              icon: Icon(Icons.download, size: 16, color: typeColor),
+              icon: Icon(Icons.download_rounded, size: 18, color: typeColor),
               label: Text(
-                isFailed ? 'Retry Download' : 'Download Pack (${pack.size})',
-                style: TextStyle(color: typeColor),
+                pack.isDemoPack
+                    ? (isFailed ? 'Retry install' : 'Install demo pack')
+                    : (isFailed
+                        ? 'Retry download'
+                        : 'Download · ${pack.size}'),
+                style: TextStyle(
+                  color: typeColor,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 11),
-                side: BorderSide(color: typeColor.withValues(alpha: 0.6)),
+                side: BorderSide(color: typeColor.withValues(alpha: 0.55)),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
@@ -116,32 +127,68 @@ class RegionPackCard extends StatelessWidget {
       );
     }
 
-    // status == 'downloaded'
+    final activatingThis = repository.activatingPackId == pack.id;
+    final busy =
+        repository.isActivatingPack || repository.isDeactivatingPack;
+
+    if (activatingThis || (isActive && repository.isDeactivatingPack)) {
+      return SizedBox(
+        width: double.infinity,
+        height: 46,
+        child: OutlinedButton.icon(
+          onPressed: null,
+          icon: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: typeColor),
+          ),
+          label: Text(
+            activatingThis ? 'Activating…' : 'Deactivating…',
+            style: TextStyle(color: typeColor, fontWeight: FontWeight.w800),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: typeColor.withValues(alpha: 0.55)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       width: double.infinity,
+      height: 46,
       child: isActive
-          ? ElevatedButton.icon(
-              onPressed: () => repository.deactivateRegionPack(),
-              icon: const Icon(Icons.radio_button_checked, size: 16),
-              label: const Text('Deactivate Pack'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.trustHigh,
+          ? FilledButton.icon(
+              onPressed: busy ? null : () => repository.deactivateRegionPack(),
+              icon: const Icon(Icons.check_circle_outline, size: 18),
+              label: const Text(
+                'Deactivate',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: WhamiAviation.success,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 11),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             )
-          : OutlinedButton.icon(
-              onPressed: () => repository.activateRegionPack(pack.id),
-              icon: Icon(Icons.bolt, size: 16, color: typeColor),
-              label: Text('Activate Pack', style: TextStyle(color: typeColor)),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 11),
-                side: BorderSide(color: typeColor.withValues(alpha: 0.6)),
+          : FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => repository.activateRegionPack(pack.id),
+              icon: const Icon(Icons.bolt_rounded, size: 18),
+              label: const Text(
+                'Activate',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: WhamiAviation.navy,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
@@ -152,169 +199,127 @@ class RegionPackCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isActive = repository.activePackId == pack.id;
     final typeColor = _typeColor(pack.type);
+    final pad = WhamiLayout.pagePad(context);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: isActive
-            ? BorderSide(color: AppColors.trustHigh, width: 1.5)
-            : BorderSide.none,
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: pad, vertical: 6),
+      decoration: WhamiAviation.lightCard().copyWith(
+        border: Border.all(
+          color: isActive
+              ? WhamiAviation.success.withValues(alpha: 0.55)
+              : WhamiAviation.lightBorder,
+          width: isActive ? 1.5 : 1,
+        ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(WhamiLayout.isTablet(context) ? 18 : 15),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header ──────────────────────────────────────────────────
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Type badge
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: typeColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: typeColor.withValues(alpha: 0.4)),
+                    border:
+                        Border.all(color: typeColor.withValues(alpha: 0.4)),
                   ),
                   child: Text(
                     pack.type.toUpperCase(),
                     style: TextStyle(
                       color: typeColor,
                       fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                // Name + location
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        pack.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        pack.location,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                const SizedBox(width: 8),
+                if (pack.isDemoPack)
+                  const WhamiStatusPill(
+                    label: 'Demo landmarks',
+                    color: WhamiAviation.amber,
                   ),
-                ),
-                // Active indicator badge
+                if (!pack.isDemoPack && pack.hasOfflineMapTiles) ...[
+                  const SizedBox(width: 6),
+                  const WhamiStatusPill(
+                    label: 'Offline tiles',
+                    color: WhamiAviation.cyanDim,
+                  ),
+                ],
+                const Spacer(),
                 if (isActive)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.trustHigh.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppColors.trustHigh.withValues(alpha: 0.5),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: AppColors.trustHigh,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'ACTIVE',
-                          style: TextStyle(
-                            color: AppColors.trustHigh,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ],
-                    ),
+                  const WhamiStatusPill(
+                    label: 'Active',
+                    color: WhamiAviation.success,
                   ),
               ],
             ),
-
             const SizedBox(height: 12),
-
-            // ── Included data chips ──────────────────────────────────────
+            Text(
+              pack.name,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                color: WhamiAviation.lightInk,
+                letterSpacing: -0.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              pack.location,
+              style: WhamiAviation.body(color: WhamiAviation.lightMuted),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              pack.coverageSummary,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: WhamiAviation.lightMuted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 6,
               runSpacing: 4,
-              children: pack.includedData
-                  .map((d) => _DataChip(label: d))
-                  .toList(),
-            ),
-
-            const SizedBox(height: 12),
-
-            // ── Trust score bar ──────────────────────────────────────────
-            Row(
               children: [
-                const Text(
-                  'Pack Trust Score',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  pack.size,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  '${pack.trustScore}%',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.forTrust(pack.trustScore),
-                  ),
-                ),
+                ...pack.includedData.map((d) => _DataChip(label: d)),
+                _DataChip(label: pack.size),
+                _DataChip(label: 'Trust ${pack.trustScore}%'),
               ],
             ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: pack.trustScore / 100,
-                backgroundColor: AppColors.divider,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  AppColors.forTrust(pack.trustScore),
+            if (pack.isDemoPack) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: WhamiAviation.amber.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: WhamiAviation.amber.withValues(alpha: 0.35),
+                  ),
                 ),
-                minHeight: 4,
+                child: const Text(
+                  'No offline map tiles in this pack. WHAMI uses the street/'
+                  'satellite basemap (online or cached) plus bundled landmarks '
+                  'around Tocumwal (YTOC).',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.4,
+                    color: WhamiAviation.lightInk,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
-            ),
-
+            ],
             const SizedBox(height: 14),
-
-            // ── Status-dependent action area ─────────────────────────────
             _buildActionArea(isActive, typeColor),
           ],
         ),
@@ -331,15 +336,19 @@ class _DataChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: WhamiAviation.lightWash,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: WhamiAviation.lightBorder),
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: WhamiAviation.lightMuted,
+        ),
       ),
     );
   }

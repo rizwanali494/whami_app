@@ -11,6 +11,15 @@ class TrustTimelineSample {
   final Map<String, int> witnessScores;
   final List<String> brokenWitnesses;
 
+  /// Ghost pin (GPS claim) when suspicious.
+  final double? gpsClaimLatitude;
+  final double? gpsClaimLongitude;
+
+  /// Trusted pin for that sample (lock / fuse).
+  final double? trustedLatitude;
+  final double? trustedLongitude;
+  final double? lieDistanceM;
+
   const TrustTimelineSample({
     required this.timestamp,
     required this.trustScore,
@@ -22,6 +31,11 @@ class TrustTimelineSample {
     required this.witnessScores,
     required this.brokenWitnesses,
     this.alertMessage,
+    this.gpsClaimLatitude,
+    this.gpsClaimLongitude,
+    this.trustedLatitude,
+    this.trustedLongitude,
+    this.lieDistanceM,
   });
 
   Map<String, dynamic> toJson() => {
@@ -35,5 +49,10 @@ class TrustTimelineSample {
         'alertMessage': alertMessage,
         'witnessScores': witnessScores,
         'brokenWitnesses': brokenWitnesses,
+        if (gpsClaimLatitude != null) 'gpsClaimLat': gpsClaimLatitude,
+        if (gpsClaimLongitude != null) 'gpsClaimLng': gpsClaimLongitude,
+        if (trustedLatitude != null) 'trustedLat': trustedLatitude,
+        if (trustedLongitude != null) 'trustedLng': trustedLongitude,
+        if (lieDistanceM != null) 'lieDistanceM': lieDistanceM,
       };
 }

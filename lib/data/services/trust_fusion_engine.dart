@@ -24,6 +24,17 @@ class FusedPosition {
   final bool gnssSuspicious;
   final List<String> sourceHierarchy;
 
+  /// Raw GPS claim when [gnssSuspicious] — the "ghost pin".
+  final double? gpsClaimLatitude;
+  final double? gpsClaimLongitude;
+
+  /// Haversine meters between GPS claim and trusted fuse (null if not lying).
+  final double? lieDistanceM;
+
+  /// False when there is no GPS, trail, or landmark to place "you" on the map.
+  /// Callers must not treat [latitude]/[longitude] as a real fix in that case.
+  final bool hasValidFix;
+
   const FusedPosition({
     required this.latitude,
     required this.longitude,
@@ -39,6 +50,10 @@ class FusedPosition {
     this.celestialAgreement = 0,
     this.gnssSuspicious = false,
     this.sourceHierarchy = const [],
+    this.gpsClaimLatitude,
+    this.gpsClaimLongitude,
+    this.lieDistanceM,
+    this.hasValidFix = true,
   });
 
   @override
@@ -49,6 +64,11 @@ class FusedPosition {
 /// Core engine that integrates multiple sensor inputs and offline GeoJSON matches,
 /// checks for anomalies (spoofing, interference), and computes a single trusted coordinate.
 class TrustFusionEngine {
+  /// Jumps beyond this are treated as a new region / cold start (e.g. tester
+  /// in Australia after an SF lock), not GNSS spoofing. Real spoof demos stay
+  /// well under this (city / regional scale).
+  static const double maxPlausibleSpoofJumpM = 200000; // 200 km
+
   /// Compiles all sensor feeds and local database match results, running the fusion algorithm
   FusedPosition compute({
     required GpsReading? gps,
@@ -71,6 +91,8 @@ class TrustFusionEngine {
     int? wmmAgreementScore,
     String? wmmStatus,
     String? wmmDescription,
+    /// Honest GPS status when [gps] is null (services off / denied / waiting).
+    String? gpsUnavailableReason,
   }) {
     final opinions = <PositionOpinion>[];
     String alertMessage = 'Positions aligned. System nominal.';
@@ -93,7 +115,8 @@ class TrustFusionEngine {
       String status = 'active';
       String desc = 'Live GPS fix';
 
-      // Detect anomalies (GPS jumps vs last trusted fix)
+      // Detect anomalies (GPS jumps vs last trusted fix).
+      // Cap at [maxPlausibleSpoofJumpM]: SF→AU (~14,000 km) is a region change.
       if (lastTrustedLat != null && lastTrustedLng != null) {
         final distFromLastTrusted = _haversine(
           lastTrustedLat,
@@ -101,8 +124,9 @@ class TrustFusionEngine {
           gps.latitude,
           gps.longitude,
         );
-        // Physically unlikely jump: large move without matching speed.
-        if (distFromLastTrusted > 500 && gps.speed < 30) {
+        if (distFromLastTrusted > 500 &&
+            distFromLastTrusted <= maxPlausibleSpoofJumpM &&
+            gps.speed < 30) {
           status = 'unstable';
           desc =
               'GPS jumped ${distFromLastTrusted.toStringAsFixed(0)} m — spoofing suspected.';
@@ -130,7 +154,7 @@ class TrustFusionEngine {
           shortCode: 'G',
           sourceType: 'gps',
           colorName: 'blue',
-          description: 'Waiting for satellite signals',
+          description: gpsUnavailableReason ?? 'GPS unavailable',
         ),
       );
     }
@@ -138,7 +162,22 @@ class TrustFusionEngine {
     // ── 2. Landmark Matching / Visual Anchor Opinion ─────────────────────────
     // Visual "Lock to Real World" pins an independent lat/lng so a lying GPS
     // pin can be caught by cross-source disagreement.
-    if (hasAnchor) {
+    // Stale locks from another continent (e.g. SF lock while GPS is in AU)
+    // are ignored entirely — they must not create a 14,000 km "lie line".
+    var useAnchor = hasAnchor;
+    if (hasAnchor && gps != null) {
+      final lockDist = _haversine(
+        landmarkAnchorLat!,
+        landmarkAnchorLng!,
+        gps.latitude,
+        gps.longitude,
+      );
+      if (lockDist > maxPlausibleSpoofJumpM) {
+        useAnchor = false;
+      }
+    }
+
+    if (useAnchor) {
       final anchorActive = gps == null || gnssSuspicious;
       opinions.add(
         PositionOpinion.fromLandmark(
@@ -158,13 +197,11 @@ class TrustFusionEngine {
           gps.latitude,
           gps.longitude,
         );
-        // Far from locked landmark while still "near" it in the UI → GPS lie.
-        if (dist > 250) {
+        if (dist > 250 && dist <= maxPlausibleSpoofJumpM) {
           gnssSuspicious = true;
           alertMessage =
               'GPS suspicious — don\'t trust this pin. GPS is ${dist.toStringAsFixed(0)} m from locked landmark.';
           alertSeverity = dist > 500 ? 'critical' : 'warning';
-          // Downgrade the GPS opinion if still marked active.
           final gpsIdx = opinions.indexWhere((o) => o.id == 'gps');
           if (gpsIdx >= 0 && opinions[gpsIdx].status == 'active') {
             opinions[gpsIdx] = opinions[gpsIdx].copyWith(
@@ -537,7 +574,7 @@ class TrustFusionEngine {
         // If GPS is > 500m away from other active sources, trigger critical spoofing alert!
         if (maxDiscrepancy > 500.0) {
           alertMessage =
-              'GPS suspicious — don\'t trust this pin. GPS differs from witnesses by ${maxDiscrepancy.toStringAsFixed(0)} m.';
+              'GPS suspicious — don\'t trust this pin. GPS differs from sensors by ${maxDiscrepancy.toStringAsFixed(0)} m.';
           alertSeverity = 'critical';
           gnssSuspicious = true;
           // Deprecate trust score
@@ -556,6 +593,32 @@ class TrustFusionEngine {
         return cb.compareTo(ca);
       });
 
+      // When GPS is lying, pin trusted fuse to lock / last trusted (not GPS).
+      if (gnssSuspicious) {
+        if (useAnchor) {
+          fusedLat = landmarkAnchorLat!;
+          fusedLng = landmarkAnchorLng!;
+        } else if (lastTrustedLat != null &&
+            lastTrustedLng != null &&
+            _haversine(
+                  lastTrustedLat,
+                  lastTrustedLng,
+                  fusedLat,
+                  fusedLng,
+                ) <=
+                maxPlausibleSpoofJumpM) {
+          fusedLat = lastTrustedLat;
+          fusedLng = lastTrustedLng;
+        }
+      }
+
+      final ghost = _ghostFields(
+        gnssSuspicious: gnssSuspicious,
+        gps: gps,
+        trustedLat: fusedLat,
+        trustedLng: fusedLng,
+      );
+
       return FusedPosition(
         latitude: fusedLat,
         longitude: fusedLng,
@@ -571,22 +634,65 @@ class TrustFusionEngine {
         celestialAgreement: celestialAgreement,
         gnssSuspicious: gnssSuspicious,
         sourceHierarchy: hierarchy,
+        gpsClaimLatitude: ghost.$1,
+        gpsClaimLongitude: ghost.$2,
+        lieDistanceM: ghost.$3,
       );
     } else {
-      // No active sources - absolute fallback
-      final fallbackLat = gps?.latitude ?? lastTrustedLat ?? 37.8087;
-      final fallbackLng = gps?.longitude ?? lastTrustedLng ?? -122.4098;
+      // No active position sources — never invent a city (e.g. SF Bay).
+      final canUseTrusted =
+          lastTrustedLat != null && lastTrustedLng != null;
+      final canUseAnchor = useAnchor &&
+          landmarkAnchorLat != null &&
+          landmarkAnchorLng != null;
+
+      if (gps == null && !canUseTrusted && !canUseAnchor) {
+        return FusedPosition(
+          latitude: 0,
+          longitude: 0,
+          confidence: 0,
+          uncertaintyRadius: 0,
+          opinions: opinions,
+          alertMessage:
+              'No position fix. Enable location or lock a landmark to continue.',
+          alertSeverity: 'critical',
+          wmmResidualUt: wmmResidualUt,
+          baroGpsAltDeltaM: baroGpsAltDeltaM,
+          magneticAgreement: magneticAgreement,
+          baroConsistency: baroConsistency,
+          celestialAgreement: celestialAgreement,
+          gnssSuspicious: false,
+          sourceHierarchy: const [],
+          hasValidFix: false,
+        );
+      }
 
       // Prefer last trusted fix when GPS itself is the suspicious source.
-      final useTrusted = gnssSuspicious &&
-          lastTrustedLat != null &&
-          lastTrustedLng != null;
+      final useTrusted = gnssSuspicious && canUseTrusted;
+
+      final trustedLat = canUseAnchor
+          ? landmarkAnchorLat!
+          : (useTrusted
+              ? lastTrustedLat!
+              : (gps?.latitude ?? lastTrustedLat ?? 0));
+      final trustedLng = canUseAnchor
+          ? landmarkAnchorLng!
+          : (useTrusted
+              ? lastTrustedLng!
+              : (gps?.longitude ?? lastTrustedLng ?? 0));
+
+      final ghost = _ghostFields(
+        gnssSuspicious: gnssSuspicious,
+        gps: gps,
+        trustedLat: trustedLat,
+        trustedLng: trustedLng,
+      );
 
       return FusedPosition(
-        latitude: useTrusted ? lastTrustedLat : fallbackLat,
-        longitude: useTrusted ? lastTrustedLng : fallbackLng,
+        latitude: trustedLat,
+        longitude: trustedLng,
         confidence: gnssSuspicious ? 25 : 0,
-        uncertaintyRadius: gnssSuspicious ? 1000.0 : 1000.0,
+        uncertaintyRadius: 1000.0,
         opinions: opinions,
         alertMessage: gnssSuspicious
             ? alertMessage
@@ -599,8 +705,50 @@ class TrustFusionEngine {
         celestialAgreement: celestialAgreement,
         gnssSuspicious: gnssSuspicious,
         sourceHierarchy: const [],
+        gpsClaimLatitude: ghost.$1,
+        gpsClaimLongitude: ghost.$2,
+        lieDistanceM: ghost.$3,
+        hasValidFix: true,
       );
     }
+  }
+
+  /// Returns (gpsClaimLat, gpsClaimLng, lieDistanceM).
+  (double?, double?, double?) _ghostFields({
+    required bool gnssSuspicious,
+    required GpsReading? gps,
+    required double trustedLat,
+    required double trustedLng,
+  }) {
+    if (!gnssSuspicious || gps == null) return (null, null, null);
+    final dist = _haversine(
+      trustedLat,
+      trustedLng,
+      gps.latitude,
+      gps.longitude,
+    );
+    // Never draw a continental lie line (stale lock / cold start).
+    if (dist > maxPlausibleSpoofJumpM) return (null, null, null);
+    return (gps.latitude, gps.longitude, dist);
+  }
+
+  /// True when GPS is so far from a lock that the lock is from another region.
+  static bool isStaleRegionLock({
+    required double lockLat,
+    required double lockLng,
+    required double gpsLat,
+    required double gpsLng,
+  }) {
+    const r = 6371000.0;
+    final dLat = (gpsLat - lockLat) * pi / 180;
+    final dLon = (gpsLng - lockLng) * pi / 180;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lockLat * pi / 180) *
+            cos(gpsLat * pi / 180) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return r * c > maxPlausibleSpoofJumpM;
   }
 
   double _haversine(double lat1, double lon1, double lat2, double lon2) {

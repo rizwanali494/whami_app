@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/models/trust_timeline_sample.dart';
 import '../../data/repositories/whami_repository.dart';
@@ -15,8 +16,28 @@ class TrustTimelineScreen extends StatefulWidget {
 
 class _TrustTimelineScreenState extends State<TrustTimelineScreen> {
   double _index = 0;
+  bool _exporting = false;
 
   WhamiRepository get repo => widget.repository;
+
+  Future<void> _export() async {
+    setState(() => _exporting = true);
+    try {
+      final file = await repo.exportEvidencePack();
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'WHAMI Evidence Pack — verified by the real world.',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   @override
   void initState() {
@@ -80,6 +101,10 @@ class _TrustTimelineScreenState extends State<TrustTimelineScreen> {
           appBar: AppBar(
             title: const Text('Trust Timeline Replay'),
             actions: [
+              TextButton(
+                onPressed: _exporting ? null : _export,
+                child: Text(_exporting ? '…' : 'Export'),
+              ),
               TextButton(
                 onPressed: () {
                   setState(() => _index = (samples.length - 1).toDouble());
@@ -166,7 +191,7 @@ class _TrustTimelineScreenState extends State<TrustTimelineScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Witnesses at this moment',
+                'Sensors at this moment',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
@@ -198,6 +223,17 @@ class _TrustTimelineScreenState extends State<TrustTimelineScreen> {
                   ),
                 ),
               ],
+              if (sample.gnssSuspicious &&
+                  sample.gpsClaimLatitude != null &&
+                  sample.trustedLatitude != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Ghost Pin split',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                _GhostSplitCard(sample: sample),
+              ],
               const SizedBox(height: 12),
               Text(
                 'Position: ${sample.latitude.toStringAsFixed(5)}, '
@@ -208,6 +244,101 @@ class _TrustTimelineScreenState extends State<TrustTimelineScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _GhostSplitCard extends StatelessWidget {
+  final TrustTimelineSample sample;
+
+  const _GhostSplitCard({required this.sample});
+
+  @override
+  Widget build(BuildContext context) {
+    final dist = sample.lieDistanceM;
+    final distLabel = dist == null
+        ? '—'
+        : dist >= 1000
+            ? '${(dist / 1000).toStringAsFixed(1)} km'
+            : '${dist.round()} m';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.trustLow.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'GPS is $distLabel from reality',
+            style: const TextStyle(
+              color: AppColors.trustLow,
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _PinColumn(
+                  title: 'Ghost (GPS)',
+                  color: AppColors.gps,
+                  lat: sample.gpsClaimLatitude!,
+                  lng: sample.gpsClaimLongitude!,
+                ),
+              ),
+              const Icon(Icons.arrow_forward, color: AppColors.trustLow),
+              Expanded(
+                child: _PinColumn(
+                  title: 'Trusted',
+                  color: AppColors.trustHigh,
+                  lat: sample.trustedLatitude!,
+                  lng: sample.trustedLongitude!,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PinColumn extends StatelessWidget {
+  final String title;
+  final Color color;
+  final double lat;
+  final double lng;
+
+  const _PinColumn({
+    required this.title,
+    required this.color,
+    required this.lat,
+    required this.lng,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(Icons.place, color: color),
+        Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+            color: color,
+          ),
+        ),
+        Text(
+          '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+        ),
+      ],
     );
   }
 }

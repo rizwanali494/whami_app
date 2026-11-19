@@ -26,7 +26,7 @@ extension AirTrustBandX on AirTrustBand {
   String get pilotLine {
     switch (this) {
       case AirTrustBand.green:
-        return 'Passive witnesses agree with non-GNSS track';
+        return 'Passive sensors agree with non-GNSS track';
       case AirTrustBand.amber:
         return 'Uncertainty growing — cross-check instruments';
       case AirTrustBand.red:

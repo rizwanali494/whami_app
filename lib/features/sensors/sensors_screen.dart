@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
+import '../../core/theme/whami_aviation.dart';
+import '../../core/widgets/whami_chrome.dart';
 import '../../data/repositories/whami_repository.dart';
+import '../../data/services/gps_service.dart';
 import 'widgets/sensor_card.dart';
 
 class SensorsScreen extends StatelessWidget {
@@ -28,38 +30,48 @@ class SensorsScreen extends StatelessWidget {
         final activeCount = sensors
             .where((s) => s.status == 'active' || s.status == 'available')
             .length;
+        final gps = repository.liveGpsReading;
+        final pad = WhamiLayout.pagePad(context);
 
         return Scaffold(
-          backgroundColor: AppColors.background,
+          backgroundColor: WhamiAviation.lightWash,
           body: CustomScrollView(
             slivers: [
               SliverAppBar(
-                backgroundColor: AppColors.headerBg,
+                backgroundColor: WhamiAviation.navy,
                 pinned: true,
                 automaticallyImplyLeading: false,
-                title: const Text(
-                  'Sensor Dashboard',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
+                expandedHeight: 72,
+                title: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SENSORS',
+                      style: TextStyle(
+                        color: WhamiAviation.cyan,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Text(
+                      'Live hardware status',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
                 actions: [
                   Padding(
-                    padding: const EdgeInsets.only(right: 16),
-                    child: Chip(
-                      backgroundColor:
-                          AppColors.trustHigh.withValues(alpha: 0.15),
-                      label: Text(
-                        '$activeCount/${sensors.length} Active',
-                        style: const TextStyle(
-                          color: AppColors.trustHigh,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    padding: EdgeInsets.only(right: pad),
+                    child: Center(
+                      child: WhamiStatusPill(
+                        label: '$activeCount/${sensors.length} live',
+                        color: WhamiAviation.success,
                       ),
-                      padding: EdgeInsets.zero,
                     ),
                   ),
                 ],
@@ -68,19 +80,23 @@ class SensorsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 12),
-                    const _SectionLabel('Physical Sensors'),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(pad, 14, pad, 0),
+                      child: _GpsDetailCard(
+                        reading: gps,
+                        gpsEnabled: repository.gpsEnabled,
+                        statusMessage: repository.gpsStatusMessage,
+                        onRetry: () => repository.retryLocation(),
+                      ),
+                    ),
+                    WhamiSectionLabel('Physical Sensors', light: true),
                     ...physical.map((s) => SensorCard(sensor: s)),
-                    const SizedBox(height: 8),
-                    const _SectionLabel('Vision & Sky'),
+                    WhamiSectionLabel('Vision & Sky', light: true),
                     ...derived.map((s) => SensorCard(sensor: s)),
-                    const SizedBox(height: 8),
-                    const _SectionLabel('Fusion Engine'),
+                    WhamiSectionLabel('Fusion Engine', light: true),
                     ...fusion.map(
                       (s) => SensorCard(sensor: s, isFusion: true),
                     ),
-                    // Clear the offline banner + nav so Barometer / Fusion
-                    // cards are not obscured.
                     const SizedBox(height: 96),
                   ],
                 ),
@@ -93,22 +109,102 @@ class SensorsScreen extends StatelessWidget {
   }
 }
 
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel(this.text);
+class _GpsDetailCard extends StatelessWidget {
+  final GpsReading? reading;
+  final bool gpsEnabled;
+  final String statusMessage;
+  final VoidCallback onRetry;
+
+  const _GpsDetailCard({
+    required this.reading,
+    required this.gpsEnabled,
+    required this.statusMessage,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: AppColors.textSecondary,
-          letterSpacing: 0.8,
-        ),
+    final live = gpsEnabled && reading != null;
+    return WhamiGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                live ? Icons.satellite_alt : Icons.gps_off,
+                color: live ? WhamiAviation.cyan : WhamiAviation.amber,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                live ? 'GNSS FIX' : 'GNSS',
+                style: WhamiAviation.overline(color: WhamiAviation.cyan),
+              ),
+              const Spacer(),
+              if (!live)
+                TextButton(
+                  onPressed: onRetry,
+                  child: const Text(
+                    'Retry',
+                    style: TextStyle(
+                      color: WhamiAviation.cyan,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (!live) ...[
+            const SizedBox(height: 6),
+            Text(
+              !gpsEnabled ? 'GPS paused — sensors only' : statusMessage,
+              style: WhamiAviation.body(),
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                WhamiMetricCell(
+                  label: 'ALT',
+                  value: reading!.altitude.isFinite
+                      ? '${reading!.altitude.round()}'
+                      : '—',
+                  unit: 'm',
+                ),
+                WhamiMetricCell(
+                  label: 'GS',
+                  value: () {
+                    final kt = reading!.speed * 1.943844;
+                    if (!reading!.speed.isFinite || reading!.speed < 0) {
+                      return '—';
+                    }
+                    return kt < 10
+                        ? kt.toStringAsFixed(1)
+                        : kt.round().toString();
+                  }(),
+                  unit: 'kt',
+                ),
+                WhamiMetricCell(
+                  label: 'HDG',
+                  value: (reading!.speed >= 0.5 && reading!.heading.isFinite)
+                      ? '${reading!.heading.round() % 360}'
+                      : '—',
+                  unit: '°',
+                ),
+                WhamiMetricCell(
+                  label: 'ACC',
+                  value: reading!.accuracy.isFinite && reading!.accuracy > 0
+                      ? (reading!.accuracy < 10
+                          ? reading!.accuracy.toStringAsFixed(1)
+                          : '${reading!.accuracy.round()}')
+                      : '—',
+                  unit: 'm',
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

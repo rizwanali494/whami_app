@@ -50,6 +50,7 @@ dependencies:
   # Archive handling for extraction
   archive: ^4.0.4
   shared_preferences: ^2.5.5
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:
@@ -74,6 +75,10 @@ flutter:
     - assets/images/
     - assets/wmm/WMM.COF
     - assets/magnetic/demo_anomaly_corridor.json
+    - assets/geometry/sf_bay_coastline.geojson
+    - assets/geometry/sfo_runway_demo.geojson
+    - assets/geometry/demo_routes.geojson
+    - region_packs/aus_victoria_nsw/
 
 flutter_native_splash:
   color: "#FFFFFF"

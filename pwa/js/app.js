@@ -19,8 +19,11 @@ const App = (() => {
     packFilter: "All",
     packQuery: "",
     spoofDismissed: false,
+    crossfireDismissed: false,
+    crossfireExpanded: null,
     timelineIndex: 0,
     lastTimelineAt: 0,
+    hasFittedGhost: false,
     ...Storage.read(),
   };
 
@@ -133,6 +136,11 @@ const App = (() => {
       lat: state.gps.lat,
       lng: state.gps.lng,
       lockName: state.lock?.name || null,
+      gpsClaimLat: t.gpsClaimLat,
+      gpsClaimLng: t.gpsClaimLng,
+      trustedLat: t.trustedLat,
+      trustedLng: t.trustedLng,
+      lieDistanceM: t.lieDistanceM,
     });
   }
 
@@ -159,7 +167,9 @@ const App = (() => {
       banner.classList.toggle("hidden", !showSpoof);
       if (showSpoof) {
         $("spoof-title").textContent = "GPS SUSPICIOUS — DON'T TRUST THIS PIN";
-        $("spoof-body").textContent = t.alertMessage || "GPS jumped without matching witnesses.";
+        $("spoof-body").textContent =
+          (t.alertMessage || "GPS jumped without matching sensors.") +
+          " Ghost pin = GPS claim.";
       }
     }
     if (lockChip) {
@@ -169,6 +179,63 @@ const App = (() => {
         $("lock-chip-label").textContent = `Locked · ${state.lock.name}`;
       }
     }
+
+    MapView.updateGhostLie({
+      visible: t.showGhostPin,
+      gpsLng: t.gpsClaimLng,
+      gpsLat: t.gpsClaimLat,
+      trustedLng: t.trustedLng,
+      trustedLat: t.trustedLat,
+      lieDistanceM: t.lieDistanceM,
+    });
+    if (t.showGhostPin && !state.hasFittedGhost) {
+      state.hasFittedGhost = true;
+      MapView.fitPair(t.gpsClaimLng, t.gpsClaimLat, t.trustedLng, t.trustedLat);
+    } else if (!t.showGhostPin) {
+      state.hasFittedGhost = false;
+    }
+
+    MapView.updateCrossfire(t.crossfire);
+    renderCrossfirePanel(t.crossfire);
+  }
+
+  function renderCrossfirePanel(cf) {
+    const el = $("crossfire-panel");
+    if (!el) return;
+    const show = cf?.visible && !state.crossfireDismissed;
+    el.classList.toggle("hidden", !show);
+    if (!show) return;
+    const chips = (cf.witnesses || [])
+      .map((w) => {
+        const color = w.isOutlier ? "#E53935" : w.agrees ? "#43A047" : "#B28704";
+        const on = state.crossfireExpanded === w.id ? "on" : "";
+        return `<button type="button" class="cf-chip ${on}" data-cf="${w.id}" style="--cf:${color}">${w.shortCode}</button>`;
+      })
+      .join("");
+    const exp = cf.witnesses?.find((w) => w.id === state.crossfireExpanded);
+    el.innerHTML = `
+      <div class="cf-top">
+        <strong>SENSOR CROSSFIRE</strong>
+        <button type="button" class="ghost" id="cf-dismiss">×</button>
+      </div>
+      <p class="cf-headline">${cf.headline}</p>
+      <div class="cf-chips">${chips}</div>
+      ${
+        exp
+          ? `<div class="cf-why"><strong>${exp.name}</strong><p>${exp.why}</p></div>`
+          : `<p class="cf-hint">Tap a sensor to see why it broke.</p>`
+      }`;
+    el.querySelector("#cf-dismiss")?.addEventListener("click", () => {
+      state.crossfireDismissed = true;
+      render();
+    });
+    el.querySelectorAll("[data-cf]").forEach((btn) => {
+      btn.onclick = () => {
+        const id = btn.dataset.cf;
+        state.crossfireExpanded = state.crossfireExpanded === id ? null : id;
+        renderCrossfirePanel(cf);
+      };
+    });
   }
 
   function renderTrust() {
@@ -212,7 +279,7 @@ const App = (() => {
       list.innerHTML = "";
     } else if (!active.length) {
       list.innerHTML =
-        '<p class="muted">Start tracking to collect GPS, landmark, and motion witnesses.</p>';
+        '<p class="muted">Start tracking to collect GPS, landmark, and motion sensors.</p>';
     } else {
       list.innerHTML = active
         .map(
@@ -305,7 +372,7 @@ const App = (() => {
       {
         id: "fusion",
         title: "Trust fusion",
-        body: `${t.headline} · ${t.agreeing}/${t.total} witnesses`,
+        body: `${t.headline} · ${t.agreeing}/${t.total} sensors`,
         value: t.score,
         color: t.color,
       },
@@ -384,8 +451,13 @@ const App = (() => {
     $("act-info").textContent = events.length - crit - warn;
     const timelineLink = `<article class="card timeline-cta">
       <h3>Trust Timeline Replay</h3>
-      <p>Scrub trust green → amber → red and see which witness broke.</p>
+      <p>Scrub trust green → amber → red and see which sensor broke.</p>
       <button class="btn btn-primary" id="open-timeline" type="button">Open Replay</button>
+    </article>
+    <article class="card timeline-cta">
+      <h3>Export Evidence Pack</h3>
+      <p>Download timeline + summary JSON for partners / insurance / research.</p>
+      <button class="btn btn-outline" id="export-evidence" type="button">Download evidence</button>
     </article>`;
     $("activity-list").innerHTML =
       timelineLink +
@@ -401,6 +473,43 @@ const App = (() => {
             .join("")
         : '<article class="card"><h3>No activity yet</h3><p>Start tracking to record trust events.</p></article>');
     $("open-timeline")?.addEventListener("click", () => go("timeline"));
+    $("export-evidence")?.addEventListener("click", exportEvidencePack);
+  }
+
+  function exportEvidencePack() {
+    const samples = Storage.readTimeline();
+    if (!samples.length) {
+      alert("No timeline yet. Start tracking first.");
+      return;
+    }
+    let maxLie = 0;
+    const broken = new Set();
+    samples.forEach((s) => {
+      if (s.lieDistanceM > maxLie) maxLie = s.lieDistanceM;
+      (s.broken || []).forEach((b) => broken.add(b));
+    });
+    const pack = {
+      product: "WHAMI Evidence Pack",
+      createdAt: new Date().toISOString(),
+      lockName: state.lock?.name || null,
+      maxLieDistanceM: maxLie,
+      brokenWitnesses: [...broken],
+      sampleCount: samples.length,
+      samples,
+    };
+    const blob = new Blob([JSON.stringify(pack, null, 2)], {
+      type: "application/json",
+    });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `whami-evidence-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    Storage.addEvent({
+      severity: "info",
+      title: "Evidence pack exported",
+      body: `${samples.length} samples downloaded for partners.`,
+    });
   }
 
   function renderTimeline() {
@@ -433,7 +542,25 @@ const App = (() => {
     $("timeline-level").style.color = color;
     $("timeline-broken").textContent = s.broken?.length
       ? `Broke: ${s.broken.join(", ")}`
-      : "All witnesses agreeing";
+      : "All sensors agreeing";
+    const ghostEl = $("timeline-ghost");
+    if (ghostEl) {
+      if (s.gnssSuspicious && s.gpsClaimLat != null && s.trustedLat != null) {
+        ghostEl.classList.remove("hidden");
+        const dist = s.lieDistanceM;
+        const distLabel =
+          dist == null
+            ? "—"
+            : dist >= 1000
+              ? `${(dist / 1000).toFixed(1)} km`
+              : `${Math.round(dist)} m`;
+        ghostEl.innerHTML = `<strong>Ghost Pin split</strong><p>GPS is ${distLabel} from reality</p>
+          <p class="muted">Ghost: ${s.gpsClaimLat.toFixed(4)}, ${s.gpsClaimLng.toFixed(4)} → Trusted: ${s.trustedLat.toFixed(4)}, ${s.trustedLng.toFixed(4)}</p>`;
+      } else {
+        ghostEl.classList.add("hidden");
+        ghostEl.innerHTML = "";
+      }
+    }
     $("timeline-coords").textContent =
       s.lat != null ? `${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}` : "—";
     $("timeline-count").textContent = `${idx + 1} / ${samples.length}`;
@@ -483,9 +610,17 @@ const App = (() => {
       );
     }
     const hint = packLoaded()
-      ? `<article class="card"><h3>Lock to Real World</h3><p>Confirm a landmark to freeze a verified anchor — keep navigating when GPS drops or lies.</p></article>`
-      : `<article class="card"><h3>Lock to Real World</h3><p>Using San Francisco landmarks. Cache a region under Offline for local witnesses.</p>
-         <button class="btn btn-primary" id="verify-open-packs" type="button" style="margin-top:10px">Open Offline</button></article>`;
+      ? `<article class="card"><h3>Lock to Real World</h3><p>Confirm a landmark to freeze a verified anchor — keep navigating when GPS drops or lies.</p>
+         <div class="pack-actions" style="margin-top:10px">
+           <button class="btn btn-outline" id="snap-coast" type="button">Snap coastline</button>
+           <button class="btn btn-outline" id="snap-runway" type="button">Snap runway</button>
+         </div></article>`
+      : `<article class="card"><h3>Lock to Real World</h3><p>Using San Francisco landmarks. Cache a region under Offline for local sensors.</p>
+         <div class="pack-actions" style="margin-top:10px">
+           <button class="btn btn-outline" id="snap-coast" type="button">Snap coastline</button>
+           <button class="btn btn-outline" id="snap-runway" type="button">Snap runway</button>
+           <button class="btn btn-primary" id="verify-open-packs" type="button">Open Offline</button>
+         </div></article>`;
     $("landmark-list").innerHTML =
       hint +
       landmarks
@@ -508,12 +643,14 @@ const App = (() => {
         })
         .join("");
     $("verify-open-packs")?.addEventListener("click", () => go("packs"));
+    $("snap-coast")?.addEventListener("click", () => snapGeometry("coastline"));
+    $("snap-runway")?.addEventListener("click", () => snapGeometry("runway"));
   }
 
   function renderSettings() {
     $("toggle-outdoor").classList.toggle("on", state.outdoor);
     $("toggle-metric").classList.toggle("on", state.metric);
-    $("settings-version").textContent = "WHAMI PWA v2.1.0";
+    $("settings-version").textContent = "WHAMI PWA v2.2.0";
     $("settings-pack").textContent = packLoaded()
       ? `${activePack().name} cached in this browser`
       : "No region pack cached";
@@ -562,6 +699,7 @@ const App = (() => {
               body: t.alertMessage || "GPS suspicious — don't trust this pin.",
             });
             state.spoofDismissed = false;
+            state.crossfireDismissed = false;
           }
           persist();
           render();
@@ -577,7 +715,7 @@ const App = (() => {
       Storage.addEvent({
         severity: "info",
         title: "Tracking started",
-        body: "GPS, compass, and motion witnesses are live in this browser.",
+        body: "GPS, compass, and motion sensors are live in this browser.",
       });
     } catch (e) {
       state.locError = e.message;
@@ -591,7 +729,7 @@ const App = (() => {
     Storage.addEvent({
       severity: "info",
       title: "Tracking stopped",
-      body: "Live witnesses paused.",
+      body: "Live sensors paused.",
     });
     render();
   }
@@ -609,6 +747,71 @@ const App = (() => {
       body: `${name} is now a verified anchor — navigate even if GPS drops.`,
     });
     render();
+  }
+
+  const GEOMETRY = {
+    coastline: {
+      name: "Coastline · SF Embarcadero",
+      line: [
+        [-122.4055, 37.8085],
+        [-122.3985, 37.7995],
+        [-122.3915, 37.7925],
+        [-122.3875, 37.7855],
+        [-122.3888, 37.7788],
+        [-122.3935, 37.7725],
+      ],
+      maxM: 2500,
+    },
+    runway: {
+      name: "Runway · SFO 28L (demo)",
+      line: [
+        [-122.3589, 37.6126],
+        [-122.3795, 37.6285],
+      ],
+      maxM: 1500,
+    },
+  };
+
+  function nearestOnLine(lat, lng, line) {
+    let best = null;
+    const cosLat = Math.cos((lat * Math.PI) / 180);
+    for (let i = 0; i < line.length - 1; i++) {
+      const [aLng, aLat] = line[i];
+      const [bLng, bLat] = line[i + 1];
+      const ax = aLng * cosLat;
+      const ay = aLat;
+      const bx = bLng * cosLat;
+      const by = bLat;
+      const px = lng * cosLat;
+      const py = lat;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      let t = len2 === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const y = ay + t * dy;
+      const x = (ax + t * dx) / cosLat;
+      const d = Trust.haversine(lat, lng, y, x);
+      if (!best || d < best.d) best = { lat: y, lng: x, d };
+    }
+    return best;
+  }
+
+  function snapGeometry(kind) {
+    const g = GEOMETRY[kind];
+    if (!g) return;
+    const lat = state.gps?.lat ?? 37.7955;
+    const lng = state.gps?.lng ?? -122.3937;
+    const snap = nearestOnLine(lat, lng, g.line);
+    if (!snap || snap.d > g.maxM) {
+      alert(
+        kind === "runway"
+          ? "No runway within range (demo SFO corridor)."
+          : "No coastline within range (demo SF Bay).",
+      );
+      return;
+    }
+    lockToRealWorld(g.name, snap.lat, snap.lng);
   }
 
   function clearLock() {
@@ -768,6 +971,7 @@ const App = (() => {
       state.timelineIndex = 0;
       renderTimeline();
     });
+    $("timeline-export")?.addEventListener("click", exportEvidencePack);
 
     $("sheet").addEventListener("pointerdown", (e) => {
       if (window.matchMedia("(min-width: 900px)").matches) return;

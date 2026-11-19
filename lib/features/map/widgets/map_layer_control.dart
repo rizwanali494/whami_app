@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/whami_aviation.dart';
 
 class MapLayerControl extends StatefulWidget {
   final Map<String, bool> layerVisibility;
   final Function(String key, bool visible) onLayerToggled;
-  final bool lightStyle;
+  final VoidCallback? onOpenMapStyle;
+  final String? mapStyleLabel;
 
   const MapLayerControl({
     super.key,
     required this.layerVisibility,
     required this.onLayerToggled,
-    this.lightStyle = false,
+    this.onOpenMapStyle,
+    this.mapStyleLabel,
   });
 
   @override
@@ -20,127 +23,189 @@ class MapLayerControl extends StatefulWidget {
 class _MapLayerControlState extends State<MapLayerControl> {
   bool _expanded = false;
 
+  void _collapse() => setState(() => _expanded = false);
+  void _expand() => setState(() => _expanded = true);
+
   @override
   Widget build(BuildContext context) {
     final activeCount = widget.layerVisibility.values.where((v) => v).length;
+    final maxPanelHeight = MediaQuery.sizeOf(context).height * 0.42;
+    final size = WhamiLayout.mapFabSize(context);
+
+    if (!_expanded) {
+      return _LayersSquareButton(
+        size: size,
+        activeCount: activeCount,
+        highlighted: false,
+        onTap: _expand,
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (_expanded)
-          Card(
-            color: widget.lightStyle ? Colors.white : AppColors.headerBg,
-            elevation: 8,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+        Material(
+          color: Colors.transparent,
+          child: Container(
+            decoration: WhamiAviation.glassPanel(
+              radius: BorderRadius.circular(14),
             ),
-            child: Container(
-              width: 200,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Column(
-                children: [
-                  _buildToggleRow(
-                    'mapTiles',
-                    'Base Map Tiles',
-                    Icons.map_outlined,
-                    AppColors.gps,
-                  ),
-                  _buildToggleRow(
-                    'landmarks',
-                    'Landmarks',
-                    Icons.location_on_outlined,
-                    AppColors.magnetic,
-                  ),
-                  _buildToggleRow(
-                    'seamap',
-                    'Sea Charts',
-                    Icons.water_outlined,
-                    AppColors.gps,
-                  ),
-                  _buildToggleRow(
-                    'magnetic',
-                    'Magnetic Grid',
-                    Icons.explore_outlined,
-                    AppColors.magnetic,
-                  ),
-                  _buildToggleRow(
-                    'opinions',
-                    'Position Opinions',
-                    Icons.shield_outlined,
-                    AppColors.whami,
-                  ),
-                  _buildToggleRow(
-                    'uncertainty',
-                    'Error Circles',
-                    Icons.radio_button_unchecked_outlined,
-                    AppColors.imu,
-                  ),
-                ],
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 240,
+                maxHeight: maxPanelHeight,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.onOpenMapStyle != null)
+                      ListTile(
+                        dense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 10),
+                        leading: const Icon(
+                          Icons.map_outlined,
+                          color: WhamiAviation.cyan,
+                          size: 20,
+                        ),
+                        title: Text(
+                          'Map style',
+                          style: WhamiAviation.body(
+                            color: WhamiAviation.textPrimary,
+                          ).copyWith(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        subtitle: Text(
+                          widget.mapStyleLabel ?? 'Choose basemap',
+                          style: WhamiAviation.overline(
+                            color: WhamiAviation.textMuted,
+                          ),
+                        ),
+                        trailing: const Icon(
+                          Icons.chevron_right,
+                          color: WhamiAviation.textMuted,
+                          size: 20,
+                        ),
+                        onTap: () {
+                          _collapse();
+                          widget.onOpenMapStyle!();
+                        },
+                      ),
+                    if (widget.onOpenMapStyle != null)
+                      const Divider(
+                        height: 8,
+                        color: WhamiAviation.hairline,
+                      ),
+                    _buildToggleRow(
+                      'mapTiles',
+                      'Base Map Tiles',
+                      Icons.map_outlined,
+                      AppColors.gps,
+                    ),
+                    _buildToggleRow(
+                      'rangeRings',
+                      'Range Rings',
+                      Icons.radar_outlined,
+                      AppColors.gps,
+                    ),
+                    _buildToggleRow(
+                      'landmarks',
+                      'Landmarks',
+                      Icons.location_on_outlined,
+                      AppColors.magnetic,
+                    ),
+                    _buildToggleRow(
+                      'seamap',
+                      'Sea Charts',
+                      Icons.water_outlined,
+                      AppColors.gps,
+                    ),
+                    _buildToggleRow(
+                      'magnetic',
+                      'Magnetic Grid',
+                      Icons.explore_outlined,
+                      AppColors.magnetic,
+                    ),
+                    _buildToggleRow(
+                      'opinions',
+                      'Position Opinions',
+                      Icons.shield_outlined,
+                      AppColors.whami,
+                    ),
+                    _buildToggleRow(
+                      'uncertainty',
+                      'Error Circles',
+                      Icons.radio_button_unchecked_outlined,
+                      AppColors.imu,
+                    ),
+                    _buildToggleRow(
+                      'spoofHeat',
+                      'Spoof Heatmap',
+                      Icons.whatshot_outlined,
+                      AppColors.trustLow,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
+        ),
         const SizedBox(height: 8),
-        if (widget.lightStyle)
-          Material(
-            color: Colors.white,
-            elevation: 3,
-            shadowColor: Colors.black26,
-            borderRadius: BorderRadius.circular(14),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: SizedBox(
-                width: 48,
-                height: 48,
-                child: Icon(
-                  Icons.layers_outlined,
-                  color: _expanded ? AppColors.whami : AppColors.headerBg,
-                  size: 22,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: _collapse,
+                child: Ink(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    color: WhamiAviation.charcoal.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.14),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    size: 22,
+                    color: WhamiAviation.textPrimary,
+                  ),
                 ),
               ),
             ),
-          )
-        else
-          FloatingActionButton.small(
-            heroTag: 'map_layers_fab',
-            onPressed: () => setState(() => _expanded = !_expanded),
-            backgroundColor: _expanded ? AppColors.whami : AppColors.headerBg,
-            child: Badge(
-              isLabelVisible: !_expanded && activeCount > 0,
-              label: Text(
-                '$activeCount',
-                style: const TextStyle(
-                  color: AppColors.headerBg,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 8,
-                ),
-              ),
-              backgroundColor: AppColors.whami,
-              child: Icon(
-                Icons.layers,
-                color: _expanded ? AppColors.headerBg : Colors.white,
-                size: 20,
-              ),
+            const SizedBox(width: 8),
+            _LayersSquareButton(
+              size: size,
+              activeCount: activeCount,
+              highlighted: true,
+              onTap: _collapse,
             ),
-          ),
+          ],
+        ),
       ],
     );
   }
 
   Widget _buildToggleRow(String key, String label, IconData icon, Color color) {
     final isVisible = widget.layerVisibility[key] ?? true;
-    final light = widget.lightStyle;
-    final textColor = light
-        ? (isVisible ? AppColors.headerBg : AppColors.textSecondary)
-        : (isVisible ? Colors.white : Colors.white54);
+    final textColor =
+        isVisible ? WhamiAviation.textPrimary : WhamiAviation.textMuted;
 
     return Theme(
-      data: light ? ThemeData.light() : ThemeData.dark(),
+      data: ThemeData.dark(),
       child: CheckboxListTile(
         value: isVisible,
         onChanged: (val) => widget.onLayerToggled(key, val ?? false),
-        activeColor: AppColors.whami,
+        activeColor: WhamiAviation.cyan,
         checkboxShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(4),
         ),
@@ -148,7 +213,7 @@ class _MapLayerControlState extends State<MapLayerControl> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         secondary: Icon(
           icon,
-          color: isVisible ? color : (light ? Colors.black38 : Colors.white54),
+          color: isVisible ? color : WhamiAviation.textMuted,
           size: 18,
         ),
         title: Text(
@@ -157,6 +222,68 @@ class _MapLayerControlState extends State<MapLayerControl> {
             color: textColor,
             fontSize: 12,
             fontWeight: isVisible ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LayersSquareButton extends StatelessWidget {
+  final double size;
+  final int activeCount;
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  const _LayersSquareButton({
+    required this.size,
+    required this.activeCount,
+    required this.highlighted,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: WhamiAviation.charcoal.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: highlighted
+                  ? WhamiAviation.cyan.withValues(alpha: 0.55)
+                  : Colors.white.withValues(alpha: 0.14),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Badge(
+            isLabelVisible: !highlighted && activeCount > 0,
+            label: Text(
+              '$activeCount',
+              style: const TextStyle(
+                color: WhamiAviation.navy,
+                fontWeight: FontWeight.bold,
+                fontSize: 8,
+              ),
+            ),
+            backgroundColor: WhamiAviation.cyan,
+            child: Icon(
+              Icons.layers,
+              color: highlighted ? WhamiAviation.cyan : WhamiAviation.cyan,
+              size: WhamiLayout.mapFabIcon(context),
+            ),
           ),
         ),
       ),

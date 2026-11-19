@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/models/landmark.dart';
 import '../../data/models/region_pack.dart';
@@ -352,6 +353,7 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
       'mediterranean_west': [38.0, 5.0],
       'tokyo_bay': [35.47, 139.848],
       'sydney_harbour': [-33.865, 151.234],
+      'aus_victoria_nsw': [-35.812, 145.608],
       'great_barrier_reef': [-20.358, 148.952],
       'arctic_ocean': [85.0, 0.0],
       'antarctica': [-80.0, 0.0],
@@ -365,6 +367,31 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
     if (_matchedLandmark == null) return;
     widget.repository.setLandmarkAnchor(_matchedLandmark!, _matchPercent);
     setState(() => _usedAsAnchor = true);
+  }
+
+  Future<void> _onSnapGeometry(String kind) async {
+    final landmark = await widget.repository.lockToGeometry(kind: kind);
+    if (!mounted) return;
+    if (landmark == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kind == 'runway'
+                ? 'No runway within range (demo SFO corridor).'
+                : 'No coastline within range (demo SF Bay).',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _matchedLandmark = landmark;
+      _matchPercent = 92;
+      _usedAsAnchor = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Locked · ${landmark.name}')),
+    );
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -601,26 +628,88 @@ class _LandmarkScanScreenState extends State<LandmarkScanScreen>
                   color: AppColors.alertWarningBorder.withValues(alpha: 0.35),
                 ),
               ),
-              child: Row(
-                children: const [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: AppColors.alertWarningBorder,
-                    size: 20,
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'No region pack is active. Activate a pack from the Region Packs screen to get accurate landmark matches for your area.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: AppColors.alertWarningBorder,
+                        size: 20,
                       ),
-                    ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'No region pack is active. Activate Victoria / NSW Riverina (or another pack) under Offline.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => context.go('/packs'),
+                    icon: const Icon(Icons.offline_pin_outlined, size: 18),
+                    label: const Text('Open Offline packs'),
                   ),
                 ],
               ),
             ),
+
+          // ── Geometry lock (roads / rail / runway / coast demos) ─────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('nearest'),
+                  icon: const Icon(Icons.my_location, size: 16),
+                  label: const Text('Snap nearest'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('coastline'),
+                  icon: const Icon(Icons.waves, size: 16),
+                  label: const Text('Coast'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('runway'),
+                  icon: const Icon(Icons.flight_takeoff, size: 16),
+                  label: const Text('Runway'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('road'),
+                  icon: const Icon(Icons.directions_car, size: 16),
+                  label: const Text('Road'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('rail'),
+                  icon: const Icon(Icons.train, size: 16),
+                  label: const Text('Rail'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('taxiway'),
+                  icon: const Icon(Icons.connecting_airports, size: 16),
+                  label: const Text('Taxiway'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('trail'),
+                  icon: const Icon(Icons.hiking, size: 16),
+                  label: const Text('Trail'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _onSnapGeometry('canal'),
+                  icon: const Icon(Icons.water, size: 16),
+                  label: const Text('Canal'),
+                ),
+              ],
+            ),
+          ),
 
           // ── Action buttons ───────────────────────────────────────────────
           Padding(

@@ -30,6 +30,9 @@ class RegionPack {
   final String? downloadUrl;
   final String? checksum;
 
+  /// One-tap mission profile: aviation | border | disaster | marine | none
+  final String missionProfile;
+
   const RegionPack({
     required this.id,
     required this.name,
@@ -48,7 +51,11 @@ class RegionPack {
     this.metadata,
     this.downloadUrl,
     this.checksum,
+    this.missionProfile = 'none',
   });
+
+  bool get isMissionPack =>
+      missionProfile != 'none' && missionProfile.isNotEmpty;
 
   RegionPack copyWith({
     String? status,
@@ -59,6 +66,7 @@ class RegionPack {
     RegionMetadata? metadata,
     String? downloadUrl,
     String? checksum,
+    String? missionProfile,
   }) {
     return RegionPack(
       id: id,
@@ -78,6 +86,7 @@ class RegionPack {
       metadata: metadata ?? this.metadata,
       downloadUrl: downloadUrl ?? this.downloadUrl,
       checksum: checksum ?? this.checksum,
+      missionProfile: missionProfile ?? this.missionProfile,
     );
   }
 
@@ -112,10 +121,12 @@ class RegionPack {
 
   /// Create from pure RegionMetadata
   factory RegionPack.fromMetadata(RegionMetadata meta, String diskPath, {String status = 'downloaded'}) {
-    // Format bytes to readable size
-    final double mb = meta.sizeBytes / (1024 * 1024);
-    final sizeStr = '${mb.toStringAsFixed(1)} MB';
+    // Format bytes to readable size (tiny demo stubs show as Demo, not 0.0 MB).
+    final sizeStr = _formatPackSize(meta.sizeBytes);
 
+    final stubMap = meta.versions.map.toLowerCase().contains('stub') ||
+        meta.checksum == 'bundled-demo' ||
+        sizeStr == 'Demo';
     return RegionPack(
       id: meta.id,
       name: meta.name,
@@ -124,34 +135,69 @@ class RegionPack {
       status: status,
       location: meta.description ?? meta.country,
       lastUpdated: meta.createdAt ?? meta.versions.data,
-      includedData: const ['Land maps', 'SQLite database', 'MBTiles maps'],
+      includedData: stubMap
+          ? const ['Landmarks', 'Demo coverage']
+          : const ['Land maps', 'SQLite database', 'MBTiles maps'],
       trustScore: meta.trustScore,
       localPath: diskPath,
       metadata: meta,
+      checksum: meta.checksum,
     );
+  }
+
+  static String _formatPackSize(int sizeBytes) {
+    if (sizeBytes <= 0) return 'Demo';
+    final mb = sizeBytes / (1024 * 1024);
+    if (mb < 0.1) return 'Demo';
+    return '${mb.toStringAsFixed(1)} MB';
   }
 
   /// Create a not-yet-downloaded RegionPack from a catalog.json entry
   factory RegionPack.fromCatalogEntry(Map<String, dynamic> json) {
     final sizeBytes = json['sizeBytes'] as int? ?? 0;
-    final mb = sizeBytes / (1024 * 1024);
-    final sizeStr = '${mb.toStringAsFixed(1)} MB';
+    final sizeStr = json['bundled'] == true
+        ? 'Demo'
+        : _formatPackSize(sizeBytes);
 
+    final bundled = json['bundled'] == true;
+    final packType = json['packType'] as String? ?? 'Unknown';
+    final mission = (json['missionProfile'] as String?) ??
+        _inferMissionProfile(packType);
     return RegionPack(
       id: json['id'] as String,
       name: json['name'] as String,
-      type: json['packType'] as String? ?? 'Unknown',
+      type: packType,
       size: sizeStr,
       status: 'available',
       location: json['country'] as String? ?? '',
       lastUpdated: '',
-      includedData: const ['Land maps', 'SQLite database', 'MBTiles maps'],
+      includedData: bundled
+          ? const ['Landmarks', 'Demo coverage']
+          : const ['Land maps', 'SQLite database', 'MBTiles maps'],
       trustScore: json['trustScore'] as int? ?? 0,
       localPath: null,
       metadata: null,
       downloadUrl: json['downloadUrl'] as String?,
       checksum: json['checksum'] as String?,
+      missionProfile: mission,
     );
+  }
+
+  static String _inferMissionProfile(String packType) {
+    switch (packType.toLowerCase()) {
+      case 'aviation':
+        return 'aviation';
+      case 'marine':
+        return 'marine';
+      case 'hiking':
+      case 'desert':
+      case 'arctic':
+        return 'disaster';
+      case 'urban':
+        return 'border';
+      default:
+        return 'none';
+    }
   }
 
   /// Serialize to JSON for saving as manifest.json
@@ -173,4 +219,25 @@ class RegionPack {
   }
 
   String toManifestJson() => const JsonEncoder.withIndent('  ').convert(toManifest());
+
+  /// Bundled / stub packs without real offline vector tiles.
+  bool get isDemoPack {
+    if (size == 'Demo') return true;
+    if (checksum == 'bundled-demo') return true;
+    final mapVer = metadata?.versions.map;
+    if (mapVer != null && mapVer.toLowerCase().contains('stub')) return true;
+    return false;
+  }
+
+  /// True when this pack is expected to include offline map tiles (not demo).
+  bool get hasOfflineMapTiles => !isDemoPack;
+
+  String get coverageSummary {
+    if (isDemoPack) {
+      return 'Landmarks for Tocumwal / Riverina · streets use online/cached basemap';
+    }
+    return includedData.isEmpty
+        ? 'Offline maps + landmarks'
+        : includedData.join(' · ');
+  }
 }

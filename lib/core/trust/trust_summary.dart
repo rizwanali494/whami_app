@@ -66,13 +66,13 @@ extension TrustLevelX on TrustLevel {
   String explanation(int score) {
     switch (this) {
       case TrustLevel.reliable:
-        return 'Score $score means most witnesses agree. You can navigate with this fix.';
+        return 'Score $score means most sensors agree. You can navigate with this fix.';
       case TrustLevel.caution:
         return 'Score $score means sources partially disagree. Prefer open sky or verify a landmark.';
       case TrustLevel.unreliable:
         return 'Score $score means sources conflict or are missing. Do not rely on this position alone.';
       case TrustLevel.unknown:
-        return 'WHAMI is still gathering sensor and offline witnesses.';
+        return 'WHAMI is still gathering sensors and offline data.';
     }
   }
 
@@ -117,6 +117,7 @@ class TrustSummary {
     required int trustScore,
     required List<PositionOpinion> opinions,
     required bool isTracking,
+    bool gnssSuspicious = false,
   }) {
     if (!isTracking && opinions.every((o) => o.status == 'unavailable')) {
       return TrustSummary(
@@ -136,6 +137,8 @@ class TrustSummary {
     final total = opinions.isEmpty ? 5 : opinions.length;
     final agreeing = active.where((o) {
       if (o.status == 'unstable') return false;
+      // Suspicious GPS must not count as agreement.
+      if (gnssSuspicious && o.sourceType == 'gps') return false;
       return o.confidence >= 55;
     }).length;
 
@@ -145,7 +148,14 @@ class TrustSummary {
             .map((o) => o.uncertaintyRadius)
             .reduce((a, b) => a < b ? a : b);
 
-    final level = trustScore >= 75
+    // Never show "reliable" while the spoof banner is relevant.
+    final effectiveScore = gnssSuspicious
+        ? (trustScore < 60 ? trustScore : 60)
+        : trustScore;
+
+    final level = gnssSuspicious
+        ? (effectiveScore < 40 ? TrustLevel.unreliable : TrustLevel.caution)
+        : effectiveScore >= 75
         ? TrustLevel.reliable
         : trustScore >= 55
             ? TrustLevel.caution
@@ -159,14 +169,18 @@ class TrustSummary {
 
     return TrustSummary(
       level: level,
-      score: trustScore,
+      score: effectiveScore,
       agreeingSources: agreeing,
       totalSources: total,
       uncertaintyMeters: uncertainty,
       headline: level.label,
-      subtitle: '$agreeing of $total sources agree · $radiusLabel',
-      explanation: level.explanation(trustScore),
-      action: level.suggestedAction,
+      subtitle: gnssSuspicious
+          ? 'GPS flagged · $agreeing of $total sources still agree · $radiusLabel'
+          : '$agreeing of $total sources agree · $radiusLabel',
+      explanation: level.explanation(effectiveScore),
+      action: gnssSuspicious
+          ? 'Verify a landmark or dismiss only after you confirm the jump is real.'
+          : level.suggestedAction,
     );
   }
 }

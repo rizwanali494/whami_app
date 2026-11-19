@@ -156,32 +156,27 @@ class RegionEngine {
       );
     }
 
-    // 3. Open landmarks.sqlite connection
-    // final dbPath = await storage.getLandmarksDbPath(packId);
-    // if (dbPath == null) {
-    //   throw StateError(
-    //     'Cannot activate pack $packId: landmarks.sqlite missing on disk.',
-    //   );
-    // }
-
-    // await landmarkDatabase.open(dbPath);
-
-    // // 4. Open map.mbtiles connection on the local tile server
-    // final mapPath = await storage.getMBTilesPath(packId);
-    // await tileServer.setActiveMBTiles(mapPath);
-
-    // 4. Open map.mbtiles connection on the local tile server
     final mapPath = await storage.getMBTilesPath(packId);
-
     if (mapPath == null) {
       throw StateError(
         'Cannot activate pack $packId: map.mbtiles missing on disk.',
       );
     }
 
-    debugPrint('[RegionEngine] Loading MBTiles: $mapPath');
+    final dbPath = await storage.getLandmarksDbPath(packId);
+    if (dbPath == null) {
+      throw StateError(
+        'Cannot activate pack $packId: landmarks.sqlite missing on disk.',
+      );
+    }
 
-    await tileServer.setActiveMBTiles(mapPath);
+    debugPrint('[RegionEngine] Loading pack DBs: $packId');
+
+    // Open landmarks + MBTiles together so activation feels snappier.
+    await Future.wait([
+      landmarkDatabase.open(dbPath),
+      tileServer.setActiveMBTiles(mapPath),
+    ]);
 
     final packDir = await storage.getPackDirectory(packId);
     _activeRegionPack = RegionPack.fromMetadata(meta, packDir.path);

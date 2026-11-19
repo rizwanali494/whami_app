@@ -135,7 +135,10 @@ class RegionPackStorage {
       final packDir = await getPackDirectory(packId);
       final metadataFile = File('${packDir.path}/metadata.json');
       final mapFile = File('${packDir.path}/map.mbtiles');
-      return await metadataFile.exists() && await mapFile.exists();
+      final landmarksFile = File('${packDir.path}/landmarks.sqlite');
+      return await metadataFile.exists() &&
+          await mapFile.exists() &&
+          await landmarksFile.exists();
     } catch (_) {
       return false;
     }

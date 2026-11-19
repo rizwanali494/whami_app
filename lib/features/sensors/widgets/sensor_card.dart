@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/whami_aviation.dart';
 import '../../../data/models/sensor_status.dart';
 
 class SensorCard extends StatelessWidget {
@@ -65,8 +66,10 @@ class SensorCard extends StatelessWidget {
     final statusColor = _statusColor(sensor.status);
     final confidenceColor = AppColors.forTrust(sensor.confidence);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    final pad = WhamiLayout.pagePad(context);
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: pad, vertical: 6),
+      decoration: WhamiAviation.lightCard(),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

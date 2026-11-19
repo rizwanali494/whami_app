@@ -1,15 +1,15 @@
-const SHELL = "whami-shell-v12";
+const SHELL = "whami-shell-v14";
 const TILES = "whami-tiles-v2";
 const SHELL_URLS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./css/app.css?v=12",
-  "./js/storage.js?v=7",
-  "./js/trust.js?v=7",
-  "./js/sensors.js?v=7",
-  "./js/map.js?v=7",
-  "./js/app.js?v=11",
+  "./css/app.css?v=14",
+  "./js/storage.js?v=9",
+  "./js/trust.js?v=9",
+  "./js/sensors.js?v=9",
+  "./js/map.js?v=9",
+  "./js/app.js?v=13",
   "./icons/app_icon.png",
   "./icons/Icon-192.png",
   "./icons/Icon-512.png",

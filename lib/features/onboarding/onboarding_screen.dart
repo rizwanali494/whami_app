@@ -20,7 +20,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.verified_user,
       title: 'Can I trust where I am?',
       body:
-          'WHAMI answers that first. Multiple witnesses — GPS, landmarks, magnetic field, motion, and sky — vote on your position.',
+          'WHAMI answers that first. Multiple sensors — GPS, landmarks, magnetic field, motion, and sky — vote on your position.',
     ),
     _PageData(
       icon: Icons.map_outlined,

@@ -29,61 +29,101 @@ class GpsReading {
       'acc: ${accuracy.toStringAsFixed(1)}m)';
 }
 
+/// High-level GPS readiness for UI (not the OS permission enum alone).
+enum GpsAvailability {
+  ready,
+  waitingForFix,
+  servicesDisabled,
+  permissionDenied,
+  permissionDeniedForever,
+  error,
+}
+
 /// Service that streams real GPS readings from the device
 class GpsService {
   StreamSubscription<Position>? _subscription;
   final _controller = StreamController<GpsReading>.broadcast();
   GpsReading? _lastReading;
   bool _isAvailable = false;
+  bool _isListening = false;
   String _statusMessage = 'Initializing...';
+  GpsAvailability _availability = GpsAvailability.waitingForFix;
 
   Stream<GpsReading> get stream => _controller.stream;
   GpsReading? get lastReading => _lastReading;
   bool get isAvailable => _isAvailable;
+  bool get isListening => _isListening;
   String get statusMessage => _statusMessage;
+  GpsAvailability get availability => _availability;
 
-  /// Check permissions and start streaming
-  Future<bool> initialize() async {
+  /// Check permissions and mark GPS ready (does not invent a position).
+  Future<bool> initialize({bool requestPermission = true}) async {
     try {
-      // Check if location services are enabled
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         _statusMessage = 'Location services disabled';
+        _availability = GpsAvailability.servicesDisabled;
         _isAvailable = false;
+        _lastReading = null;
         return false;
       }
 
-      // Check permissions
       var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
+      if (permission == LocationPermission.denied && requestPermission) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          _statusMessage = 'Location permission denied';
-          _isAvailable = false;
-          return false;
-        }
+      }
+      if (permission == LocationPermission.denied) {
+        _statusMessage = 'Location permission denied';
+        _availability = GpsAvailability.permissionDenied;
+        _isAvailable = false;
+        _lastReading = null;
+        return false;
       }
 
       if (permission == LocationPermission.deniedForever) {
         _statusMessage = 'Location permission permanently denied';
+        _availability = GpsAvailability.permissionDeniedForever;
         _isAvailable = false;
+        _lastReading = null;
         return false;
       }
 
       _isAvailable = true;
-      _statusMessage = 'GPS ready';
+      _availability = _lastReading == null
+          ? GpsAvailability.waitingForFix
+          : GpsAvailability.ready;
+      _statusMessage =
+          _lastReading == null ? 'Waiting for GPS fix' : 'GPS ready';
       return true;
     } catch (e) {
       _statusMessage = 'GPS initialization failed: $e';
+      _availability = GpsAvailability.error;
       _isAvailable = false;
+      _lastReading = null;
       return false;
     }
+  }
+
+  /// Re-check services/permission after the user changes OS settings.
+  /// Restarts the stream when tracking should be live again.
+  Future<bool> ensureAvailable({bool restartIfReady = true}) async {
+    final ok = await initialize(requestPermission: false);
+    if (ok && restartIfReady && _isListening) {
+      startListening();
+    }
+    return ok;
   }
 
   /// Start streaming GPS updates
   void startListening() {
     if (!_isAvailable) return;
 
+    _subscription?.cancel();
+    _isListening = true;
+    _availability = GpsAvailability.waitingForFix;
+    if (_lastReading == null) {
+      _statusMessage = 'Waiting for GPS fix';
+    }
     _subscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
@@ -101,12 +141,14 @@ class GpsService {
           timestamp: position.timestamp,
         );
         _lastReading = reading;
+        _availability = GpsAvailability.ready;
         _statusMessage = 'Signal stable';
         _controller.add(reading);
       },
       onError: (e) {
         debugPrint('GPS stream error: $e');
         _statusMessage = 'GPS error: $e';
+        _availability = GpsAvailability.error;
       },
     );
   }
@@ -180,6 +222,7 @@ class GpsService {
   void stopListening() {
     _subscription?.cancel();
     _subscription = null;
+    _isListening = false;
   }
 
   void dispose() {

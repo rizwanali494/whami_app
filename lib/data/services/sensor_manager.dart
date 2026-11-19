@@ -167,6 +167,22 @@ class SensorManager {
     // magnetometerService is NOT stopped — it keeps running
     imuService.stopListening();
     barometerService.stopListening();
+    _lastGps = null;
+  }
+
+  /// Pause GPS only — mag / IMU / baro keep feeding (degraded / sensors-only demo).
+  void pauseGps() {
+    gpsService.stopListening();
+    _lastGps = null;
+    if (!_controller.isClosed) _emitSnapshot();
+  }
+
+  /// Resume GPS hardware stream after [pauseGps].
+  /// Caller should [GpsService.initialize] first when recovering from
+  /// services-off / permission-denied.
+  void resumeGps() {
+    if (!gpsService.isAvailable) return;
+    gpsService.startListening();
   }
 
   void _updateCelestialCoords() {

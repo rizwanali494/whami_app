@@ -134,7 +134,7 @@ class _AirScreenState extends State<AirScreen> {
             ),
             child: const Text(
               'RESEARCH / ADVISORY ONLY — Do not use to navigate the aircraft. '
-              'WHAMI-Air logs passive witnesses (WMM magnetic, baro, IMU, sky) '
+              'WHAMI-Air logs passive sensors (WMM magnetic, baro, IMU, sky) '
               'to help bound INS-like drift when GNSS is degraded.',
               style: TextStyle(fontSize: 13, height: 1.35),
             ),
